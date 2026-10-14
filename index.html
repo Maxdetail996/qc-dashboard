@@ -472,6 +472,34 @@ dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
 dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('drag-over'); handleFile(e.dataTransfer.files[0]); });
 document.getElementById('file-input').addEventListener('change', e => handleFile(e.target.files[0]));
 
+// Auto-load database from GitHub
+const DB_URL = 'https://raw.githubusercontent.com/Maxdetail996/qc-dashboard/main/qc_database_2026-10-06.db';
+function autoLoadDB() {
+  showLoading(LANG==='zh'?'正在加载数据库…':'Loading database...');
+  fetch(DB_URL)
+    .then(r => {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.arrayBuffer();
+    })
+    .then(buf => {
+      if (!SQL) throw new Error(LANG==='zh'?'sql.js 尚未就绪，请稍后再试':'sql.js not ready, please try again');
+      db = new SQL.Database(new Uint8Array(buf));
+      const filename = 'qc_database_2026-10-06.db';
+      extractData(filename);
+      showDashboard(filename);
+    })
+    .catch(e => {
+      showError((LANG==='zh'?'自动加载失败，请手动上传数据库文件：':'Auto-load failed, please upload manually: ') + e.message);
+    });
+}
+
+// Wait for sql.js then auto-load
+function waitForSQLAndLoad() {
+  if (SQL) { autoLoadDB(); }
+  else { setTimeout(waitForSQLAndLoad, 200); }
+}
+waitForSQLAndLoad();
+
 function handleFile(file) {
   if (!file) return;
   if (!file.name.match(/\.(db|sqlite|sqlite3)$/i)) { showError('请上传 .db / .sqlite 文件'); return; }
