@@ -473,7 +473,7 @@ dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('drag
 document.getElementById('file-input').addEventListener('change', e => handleFile(e.target.files[0]));
 
 // Auto-load database from GitHub
-const DB_URL = 'https://raw.githubusercontent.com/Maxdetail996/qc-dashboard/main/qc_database_2026-10-06.db';
+const DB_URL = 'https://maxdetail996.github.io/qc-dashboard/qc_database_2026-10-06.db';
 function autoLoadDB() {
   showLoading(LANG==='zh'?'正在加载数据库…':'Loading database...');
   fetch(DB_URL)
