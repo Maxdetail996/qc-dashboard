@@ -1,0 +1,2190 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QC Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/sql-wasm.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"></script>
+<style>
+:root {
+  --bg:#0f1117; --surface:#1a1d27; --surface2:#22263a; --border:#2e3350;
+  --accent:#4f8cff; --warn:#f5a623; --danger:#ff4d6d; --pass:#00c48c;
+  --text:#e8eaf6; --muted:#7b82a8; --purple:#c77dff;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter','Segoe UI',system-ui,sans-serif;font-size:13px}
+
+/* ── UPLOAD SCREEN ── */
+#upload-screen{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  min-height:100vh;gap:32px;padding:40px;
+}
+.upload-logo{font-size:48px;line-height:1}
+.upload-title{font-size:22px;font-weight:700;color:var(--text);text-align:center}
+.upload-sub{font-size:13px;color:var(--muted);text-align:center;max-width:420px;line-height:1.6}
+.drop-zone{
+  width:480px;max-width:100%;
+  border:2px dashed var(--border);border-radius:16px;
+  background:var(--surface);padding:48px 32px;
+  display:flex;flex-direction:column;align-items:center;gap:16px;
+  cursor:pointer;transition:all .2s;
+}
+.drop-zone:hover,.drop-zone.drag-over{border-color:var(--accent);background:rgba(79,140,255,.07)}
+.drop-zone .dz-icon{font-size:36px}
+.drop-zone .dz-text{font-size:14px;font-weight:600;color:var(--text)}
+.drop-zone .dz-sub{font-size:12px;color:var(--muted)}
+.drop-zone input[type=file]{display:none}
+.btn-upload{
+  background:var(--accent);color:#fff;border:none;
+  padding:10px 28px;border-radius:8px;font-size:13px;font-weight:600;
+  cursor:pointer;transition:opacity .15s;
+}
+.btn-upload:hover{opacity:.85}
+.upload-note{font-size:11px;color:var(--muted);text-align:center}
+
+/* ── LOADING ── */
+#loading-screen{
+  display:none;flex-direction:column;align-items:center;justify-content:center;
+  min-height:100vh;gap:20px;
+}
+.spinner{width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-text{font-size:14px;color:var(--muted)}
+
+/* ── DASHBOARD ── */
+#dashboard{display:none}
+
+.header{
+  background:var(--surface);border-bottom:1px solid var(--border);
+  padding:11px 24px;display:flex;align-items:center;gap:14px;
+  position:sticky;top:0;z-index:100;
+}
+.header h1{font-size:15px;font-weight:700;white-space:nowrap}
+.tab-bar{display:flex;gap:4px;background:var(--surface2);border-radius:8px;padding:3px}
+.tab{padding:6px 14px;border-radius:6px;border:none;background:transparent;
+  color:var(--muted);cursor:pointer;font-size:12px;font-weight:500;transition:all .15s}
+.tab.active{background:var(--accent);color:#fff}
+.tab:hover:not(.active){color:var(--text);background:var(--border)}
+.header-right{margin-left:auto;display:flex;align-items:center;gap:12px}
+.datasub{font-size:11px;color:var(--muted);white-space:nowrap}
+.btn-change{font-size:11px;padding:5px 12px;border-radius:6px;border:1px solid var(--border);
+  background:var(--surface2);color:var(--muted);cursor:pointer;transition:all .15s;white-space:nowrap}
+.btn-change:hover{color:var(--text);border-color:var(--accent)}
+
+.main{padding:18px 24px;max-width:1600px;margin:0 auto}
+.page{display:none}
+.page.active{display:block}
+
+/* ── FILTER BAR ── */
+.filter-bar{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:18px;
+  background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 16px;align-items:flex-end}
+.fg{display:flex;flex-direction:column;gap:4px}
+.fg label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.fg select,.fg input{background:var(--surface2);border:1px solid var(--border);border-radius:6px;
+  color:var(--text);padding:5px 10px;font-size:12px;outline:none;min-width:118px}
+.fg select:focus,.fg input:focus{border-color:var(--accent)}
+.btn{padding:6px 14px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:500;transition:all .15s}
+.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{opacity:.85}
+.btn-ghost{background:var(--surface2);color:var(--muted);border:1px solid var(--border)}.btn-ghost:hover{color:var(--text)}
+.filter-actions{display:flex;gap:8px}
+
+/* ── KPI CARDS ── */
+.kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:12px;margin-bottom:18px}
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px}
+.kpi .klabel{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px}
+.kpi .kval{font-size:24px;font-weight:700;line-height:1}
+.kpi .ksub{font-size:11px;color:var(--muted);margin-top:4px}
+.kpass .kval{color:var(--pass)} .kfail .kval{color:var(--danger)}
+.kwarn .kval{color:var(--warn)} .kinfo .kval{color:var(--accent)} .krate .kval{color:var(--purple)}
+
+/* ── PIVOT TABLE ── */
+.pivot-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:18px}
+.pheader{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.pheader h3{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.pivot-wrap{overflow-x:auto}
+.pivot-table{width:100%;border-collapse:collapse;font-size:12px}
+.pivot-table th{background:var(--surface2);color:var(--muted);padding:9px 14px;text-align:right;
+  font-size:10px;text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--border);white-space:nowrap}
+.pivot-table th:first-child{text-align:left}
+.pivot-table td{padding:8px 14px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap}
+.pivot-table td:first-child{text-align:left;font-weight:600}
+.pivot-table tr:last-child td{border-bottom:none;font-weight:700;background:var(--surface2)}
+.pivot-table tr:hover:not(:last-child) td{background:rgba(79,140,255,.05)}
+.rate-low{color:var(--pass);font-weight:600} .rate-mid{color:var(--warn);font-weight:600} .rate-high{color:var(--danger);font-weight:600}
+
+/* ── CHARTS ── */
+.charts-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:18px}
+.chart-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px}
+.chart-card h3{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:14px}
+.h200{height:200px;position:relative} .h240{height:240px;position:relative} .h260{height:260px;position:relative} .h300{height:300px;position:relative} .h320{height:320px;position:relative} .h360{height:360px;position:relative} .h460{height:460px;position:relative}
+
+/* ── TABLE ── */
+.table-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.table-header{padding:12px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)}
+.table-header h3{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.tcount{font-size:11px;color:var(--muted)}
+.table-wrap{overflow-x:auto;max-height:480px;overflow-y:auto}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{background:var(--surface2);color:var(--muted);padding:8px 12px;text-align:left;
+  font-size:10px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;
+  position:sticky;top:0;border-bottom:1px solid var(--border);cursor:pointer;user-select:none}
+th:hover{color:var(--text)}
+td{padding:8px 12px;border-bottom:1px solid var(--border);white-space:nowrap}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--surface2)}
+.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600}
+.badge.PASS{background:rgba(0,196,140,.15);color:var(--pass)}
+.badge.FAIL{background:rgba(255,77,109,.15);color:var(--danger)}
+.badge.WAIVE{background:rgba(245,166,35,.15);color:var(--warn)}
+.badge.PENDING{background:rgba(79,140,255,.15);color:var(--accent)}
+
+/* ── DEFECT BARS ── */
+.defect-list{display:flex;flex-direction:column;gap:7px}
+.defect-item{display:flex;align-items:center;gap:8px}
+.dname{min-width:200px;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dbar-wrap{flex:1;background:var(--surface2);border-radius:3px;height:7px;overflow:hidden}
+.dbar-fill{height:100%;border-radius:3px}
+.dcnt{min-width:36px;text-align:right;font-size:11px;color:var(--muted)}
+.dpct{min-width:42px;text-align:right;font-size:11px;color:var(--accent)}
+
+/* ── PAGINATION ── */
+.pagination{display:flex;align-items:center;gap:8px;padding:10px 14px;border-top:1px solid var(--border)}
+.pinfo{font-size:11px;color:var(--muted)}
+.pbtns{display:flex;gap:4px;margin-left:auto}
+.pbtn{padding:4px 10px;border-radius:5px;border:1px solid var(--border);
+  background:var(--surface2);color:var(--muted);cursor:pointer;font-size:11px;transition:all .15s}
+.pbtn.active,.pbtn:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:18px}
+.mb16{margin-bottom:16px}
+.empty{text-align:center;color:var(--muted);padding:32px;font-size:12px}
+th .si{font-size:9px;margin-left:3px;opacity:.5}
+th.sa .si::after{content:"▲"} th.sd .si::after{content:"▼"} th:not(.sa):not(.sd) .si::after{content:"⇅"}
+@media(max-width:900px){.charts-grid,.two-col{grid-template-columns:1fr}.main{padding:10px}.drop-zone{width:100%}}
+</style>
+</head>
+<body>
+
+<!-- ══════════════ UPLOAD SCREEN ══════════════ -->
+<div id="upload-screen">
+  <div class="upload-logo">📦</div>
+  <div>
+    <div class="upload-title">QC Dashboard</div>
+    <div class="upload-sub" style="margin-top:8px">上传你的验货数据库文件，自动生成数据分析看板</div>
+  </div>
+
+  <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+    <div class="dz-icon">🗄️</div>
+    <div class="dz-text">拖拽 .db 文件到这里</div>
+    <div class="dz-sub">或点击选择文件</div>
+    <input type="file" id="file-input" accept=".db,.sqlite,.sqlite3">
+    <button class="btn-upload" onclick="event.stopPropagation();document.getElementById('file-input').click()">选择数据库文件</button>
+  </div>
+  <div class="upload-note">文件在浏览器本地处理，不会上传到任何服务器</div>
+  <div id="upload-error" style="color:var(--danger);font-size:12px;display:none"></div>
+</div>
+
+<!-- ══════════════ LOADING SCREEN ══════════════ -->
+<div id="loading-screen">
+  <div class="spinner"></div>
+  <div class="loading-text" id="loading-text">正在读取数据库…</div>
+</div>
+
+<!-- ══════════════ DASHBOARD ══════════════ -->
+<div id="dashboard">
+  <div class="header">
+    <h1>📦 QC Dashboard</h1>
+    <div class="tab-bar">
+      <button class="tab active" onclick="switchTab('overview')">总览</button>
+      <button class="tab" onclick="switchTab('supplier')">供应商分析</button>
+      <button class="tab" onclick="switchTab('defects')">不良缺陷</button>
+      <button class="tab" onclick="switchTab('records')">验货记录</button>
+      <button class="tab" onclick="switchTab('brands')">品牌良率</button>
+      <button class="tab" onclick="switchTab('lookup')">快速查找</button>
+    </div>
+    <div class="header-right">
+      <span class="datasub" id="data-summary"></span>
+      <button onclick="toggleLang()" id="lang-btn" style="background:rgba(79,140,255,.15);border:1px solid rgba(79,140,255,.4);border-radius:6px;color:#4f8cff;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer">EN</button>
+      <button onclick="exportExcel()" style="display:flex;align-items:center;gap:5px;background:rgba(0,196,140,.15);border:1px solid rgba(0,196,140,.4);border-radius:6px;color:#00c48c;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer" onmouseover="this.style.background='rgba(0,196,140,.28)'" onmouseout="this.style.background='rgba(0,196,140,.15)'">⬇ 导出 Excel</button>
+      <button class="btn-change" onclick="resetToUpload()">↩ 换数据库</button>
+    </div>
+  </div>
+
+  <div class="main">
+
+    <!-- OVERVIEW -->
+    <div class="page active" id="page-overview">
+      <div class="filter-bar">
+        <div class="fg"><label data-i18n="f_year">年份</label><select id="ov-year"><option value="">全部</option></select></div>
+        <div class="fg"><label data-i18n="f_month">月份</label><select id="ov-month"><option value="">全部</option></select></div>
+        <div class="fg"><label data-i18n="f_supplier">供应商</label><select id="ov-supplier"><option value="">全部</option></select></div>
+        <div class="fg"><label data-i18n="f_prodgroup">产品组</label><select id="ov-prodgroup"><option value="">全部</option></select></div>
+        <div class="fg"><label data-i18n="f_start_month">开始月份</label><select id="ov-range-from"><option value="">全部</option></select></div>
+        <div class="fg"><label data-i18n="f_end_month">结束月份</label><select id="ov-range-to"><option value="">全部</option></select></div>
+        <div class="filter-actions">
+          <button class="btn btn-primary" onclick="applyOvF()" data-i18n="f_filter">筛选</button>
+          <button class="btn btn-ghost" onclick="resetOvF()" data-i18n="f_reset">重置</button>
+        </div>
+      </div>
+      <div class="kpi-row" id="ov-kpis"></div>
+      <div class="pivot-card mb16">
+        <div class="pheader"><h3 data-i18n="lbl_monthly_pivot">${t('lbl_monthly_pivot')}</h3></div>
+        <div class="pivot-wrap"><table class="pivot-table">
+          <thead><tr>
+            <th data-i18n="th_month">月份</th><th data-i18n="th_inspections">验货次数</th><th data-i18n="th_defect_lines">缺陷条数</th><th data-i18n="kpi_defect_qty">不良数量</th>
+            <th data-i18n="kpi_sample">抽检数量</th><th data-i18n="kpi_defect_rate">不良率</th><th>PASS</th><th>FAIL</th><th>WAIVE</th><th data-i18n="kpi_order">订单总量</th>
+          </tr></thead>
+          <tbody id="ov-pivot-tbody"></tbody>
+        </table></div>
+      </div>
+      <div class="charts-grid">
+        <div class="chart-card"><h3 data-i18n="tab_overview">月度不良率趋势</h3><div class="h300"><canvas id="c-ov-rate"></canvas></div></div>
+        <div class="chart-card"><h3 data-i18n="s_yearly">年度验货结果</h3><div class="h300"><canvas id="c-ov-yearly"></canvas></div></div>
+      </div>
+      <div class="charts-grid">
+        <div class="chart-card"><h3 data-i18n="s_monthly_vol">月度验货次数</h3><div class="h240"><canvas id="c-ov-vol"></canvas></div></div>
+        <div class="chart-card"><h3 data-i18n="s_defect_dist">不良等级分布</h3><div class="h240"><canvas id="c-ov-class"></canvas></div></div>
+      </div>
+      <div class="chart-card mb16">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+          <h3 style="margin:0" data-i18n="s_defect_range">月度不良率趋势（筛选范围）</h3>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span style="font-size:11px;color:var(--muted)">范围</span>
+            <select id="ov-month-from" onchange="renderOvMonthlyCombo()" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:4px 8px;font-size:11px;outline:none"></select>
+            <span style="font-size:11px;color:var(--muted)">至</span>
+            <select id="ov-month-to" onchange="renderOvMonthlyCombo()" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:4px 8px;font-size:11px;outline:none"></select>
+            <button onclick="resetOvMonthRange()" style="background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--muted);padding:4px 10px;font-size:11px;cursor:pointer">全部</button>
+          </div>
+        </div>
+        <div class="h280"><canvas id="c-ov-monthly-combo"></canvas></div>
+        <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+          <div onclick="toggleOvDefectTable()" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;padding:2px 0">
+            <span style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">${t('s_top_monthly')}</span>
+            <span id="ov-defect-toggle-icon" style="font-size:12px;color:var(--muted)">▼ 展开</span>
+          </div>
+          <div id="ov-monthly-defect-table" style="display:none;margin-top:10px"></div>
+        </div>
+      </div>
+      <div class="chart-card mb16"><h3 data-i18n="s_top10">整体前 10 不良缺陷</h3><div style="padding:6px 0" id="ov-top10"></div></div>
+    </div>
+
+    <!-- SUPPLIER -->
+    <div class="page" id="page-supplier">
+      <div class="filter-bar">
+        <div class="fg"><label data-i18n="f_year">年份</label><select id="sup-year"><option value="">全部</option></select></div>
+        <div class="fg"><label data-i18n="f_month">月份</label><select id="sup-month"><option value="">全部</option></select></div>
+        <div class="fg"><label data-i18n="f_start_month">开始月份</label><select id="sup-range-main-from"><option value="">全部</option></select></div>
+        <div class="fg"><label data-i18n="f_end_month">结束月份</label><select id="sup-range-main-to"><option value="">全部</option></select></div>
+        <div class="filter-actions">
+          <button class="btn btn-primary" onclick="applySupF()">筛选</button>
+          <button class="btn btn-ghost" onclick="resetSupF()">重置</button>
+        </div>
+      </div>
+      <div class="pivot-card mb16">
+        <div class="pheader"><h3 data-i18n="s_sup_data">${t('s_sup_data')}</h3></div>
+        <div class="pivot-wrap"><table class="pivot-table">
+          <thead><tr>
+            <th data-i18n="th_sup">供应商</th><th data-i18n="th_inspections">验货次数</th><th data-i18n="th_defect_lines">缺陷条数</th><th data-i18n="kpi_defect_qty">不良数量</th>
+            <th data-i18n="kpi_sample">抽检数量</th><th data-i18n="kpi_defect_rate">不良率</th><th>PASS</th><th>FAIL</th><th>WAIVE</th><th data-i18n="kpi_order">订单总量</th>
+          </tr></thead>
+          <tbody id="sup-pivot-tbody"></tbody>
+        </table></div>
+      </div>
+      <div class="chart-card mb16"><h3 data-i18n="s_sup_rate">各供应商不良率对比</h3><div class="h320"><canvas id="c-sup-bar"></canvas></div></div>
+      <div class="chart-card mb16"><h3 data-i18n="s_sup_rank">不良率对比</h3><div class="h320"><canvas id="c-sup-rank-line"></canvas></div></div>
+      <div class="two-col">
+        <div class="chart-card">
+          <h3 data-i18n="s_monthly_trend_short">月度不良率趋势</h3>
+          <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+            <select id="sup-detail-sel" style="background:var(--surface2);border:1px solid var(--border);
+              border-radius:6px;color:var(--text);padding:5px 10px;font-size:12px;outline:none;flex:1;min-width:100px"></select>
+            <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+              <select id="sup-range-from" style="background:var(--surface2);border:1px solid var(--border);
+                border-radius:6px;color:var(--text);padding:5px 8px;font-size:12px;outline:none"></select>
+              <span style="color:var(--muted);font-size:12px">至</span>
+              <select id="sup-range-to" style="background:var(--surface2);border:1px solid var(--border);
+                border-radius:6px;color:var(--text);padding:5px 8px;font-size:12px;outline:none"></select>
+              <button class="btn btn-ghost" onclick="resetSupRange()" style="padding:5px 10px;font-size:11px">全部</button>
+            </div>
+          </div>
+          <div class="h260"><canvas id="c-sup-monthly"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3 id="sup-def-title">供应商前 10 不良缺陷</h3>
+          <div style="padding:4px 0" id="sup-top10"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DEFECTS -->
+    <div class="page" id="page-defects">
+      <div class="filter-bar">
+        <div class="fg"><label data-i18n="f_year">年份</label><select id="def-year"><option value="">全部</option></select></div>
+        <div class="fg"><label data-i18n="f_month">月份</label><select id="def-month"><option value="">全部</option></select></div>
+        <div class="fg"><label data-i18n="f_start_month">开始月份</label><select id="def-range-from"><option value="">全部</option></select></div>
+        <div class="fg"><label data-i18n="f_end_month">结束月份</label><select id="def-range-to"><option value="">全部</option></select></div>
+        <div class="fg"><label data-i18n="f_supplier">供应商</label><select id="def-supplier"><option value="">全部</option></select></div>
+        <div class="fg"><label data-i18n="f_prodgroup">产品组</label><select id="def-prodgroup"><option value="">全部</option></select></div>
+        <div class="fg"><label>不良等级</label>
+          <select id="def-class"><option value="">全部</option><option>Critical</option><option>Major</option><option>Minor</option></select>
+        </div>
+        <div class="filter-actions">
+          <button class="btn btn-primary" onclick="applyDefF()">筛选</button>
+          <button class="btn btn-ghost" onclick="resetDefF()">重置</button>
+        </div>
+      </div>
+      <div class="two-col">
+        <div class="chart-card"><h3>前 10 不良缺陷</h3><div style="padding:4px 0" id="def-top10"></div></div>
+        <div class="chart-card"><h3>不良等级占比</h3><div class="h200"><canvas id="c-def-donut"></canvas></div></div>
+      </div>
+      <div class="table-card">
+        <div class="table-header"><h3 data-i18n="s_defect_detail">缺陷明细</h3><span class="tcount" id="def-count"></span></div>
+        <div class="table-wrap"><table><thead><tr>
+          <th data-i18n="th_defect_type">${t('th_defect_type')}</th><th data-i18n="th_defect_grade">${t('th_defect_grade')}</th><th data-i18n="th_location2">${t('th_location2')}</th><th>数量</th><th>Order ID</th><th data-i18n="th_sup">供应商</th><th>产品组</th><th>日期</th>
+        </tr></thead><tbody id="def-tbody"></tbody></table></div>
+        <div class="pagination" id="def-pager"></div>
+      </div>
+    </div>
+
+    <!-- RECORDS -->
+    <div class="page" id="page-records">
+      <div class="filter-bar">
+        <div class="fg"><label>Order ID</label><input type="text" id="rec-orderid" placeholder="搜索..."></div>
+        <div class="fg"><label>PO Order Nbr</label><input type="text" id="rec-po" placeholder="搜索..."></div>
+        <div class="fg"><label data-i18n="f_supplier">供应商</label><select id="rec-supplier"><option value="">全部</option></select></div>
+        <div class="fg"><label data-i18n="f_prodgroup">产品组</label><select id="rec-prodgroup"><option value="">全部</option></select></div>
+        <div class="fg"><label>验货结果</label>
+          <select id="rec-result"><option value="">全部</option><option>PASS</option><option>FAIL</option><option>WAIVE</option><option>PENDING</option></select>
+        </div>
+        <div class="fg"><label data-i18n="f_year">年份</label><select id="rec-year"><option value="">全部</option></select></div>
+        <div class="fg"><label data-i18n="f_month">月份</label><select id="rec-month"><option value="">全部</option></select></div>
+        <div class="fg"><label data-i18n="f_start_month">开始月份</label><select id="rec-range-from"><option value="">全部</option></select></div>
+        <div class="fg"><label data-i18n="f_end_month">结束月份</label><select id="rec-range-to"><option value="">全部</option></select></div>
+        <div class="filter-actions">
+          <button class="btn btn-primary" onclick="applyRecF()">筛选</button>
+          <button class="btn btn-ghost" onclick="resetRecF()">重置</button>
+        </div>
+      </div>
+      <div class="table-card">
+        <div class="table-header"><h3>验货记录</h3><span class="tcount" id="rec-count"></span></div>
+        <div class="table-wrap"><table id="rec-table"><thead><tr>
+          <th onclick="sortRec('order_id')">Order ID<span class="si"></span></th>
+          <th onclick="sortRec('prod_group')">Product Group<span class="si"></span></th>
+          <th onclick="sortRec('po_order_nbr')">PO Order Nbr<span class="si"></span></th>
+          <th onclick="sortRec('order_qty')">Order Qty<span class="si"></span></th>
+          <th onclick="sortRec('location')">供应商<span class="si"></span></th>
+          <th onclick="sortRec('qc_pass_qty')">QC Pass Qty<span class="si"></span></th>
+          <th onclick="sortRec('lot_size')">Lot Size<span class="si"></span></th>
+          <th onclick="sortRec('total_sample_size')">Sample Size<span class="si"></span></th>
+          <th onclick="sortRec('overall_result')">验货结果<span class="si"></span></th>
+          <th onclick="sortRec('submission_time')">日期<span class="si"></span></th>
+          <th>备注</th>
+        </tr></thead><tbody id="rec-tbody"></tbody></table></div>
+        <div class="pagination" id="rec-pager"></div>
+      </div>
+    </div>
+
+    <!-- BRANDS -->
+    <div class="page" id="page-brands">
+      <div class="filter-bar" style="flex-wrap:wrap;gap:10px">
+        <div class="fg"><label data-i18n="f_start_month">开始月份</label><select id="br-range-from"><option value="">全部</option></select></div>
+        <div class="fg"><label data-i18n="f_end_month">结束月份</label><select id="br-range-to"><option value="">全部</option></select></div>
+        <div class="fg" style="min-width:200px">
+          <label>选择供应商（可多选，最多5家）</label>
+          <div id="br-sup-checkboxes" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px"></div>
+        </div>
+        <div class="filter-actions">
+          <button class="btn btn-primary" onclick="applyBrF()">对比</button>
+          <button class="btn btn-ghost" onclick="resetBrF()">重置</button>
+        </div>
+      </div>
+      <div id="br-content"></div>
+    </div>
+    <!-- LOOKUP -->
+    <div class="page" id="page-lookup">
+      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;padding:14px 16px;background:var(--surface1);border-radius:10px;margin-bottom:16px;border:0.5px solid var(--border)">
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <label style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">供应商</label>
+          <select id="ql-supplier" onchange="renderQuickLookup()" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:7px 12px;font-size:12px;outline:none;min-width:150px">
+            <option value="">全部供应商</option>
+          </select>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <label style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">项目（Shell类型）</label>
+          <select id="ql-project" onchange="renderQuickLookup()" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:7px 12px;font-size:12px;outline:none;min-width:150px">
+            <option value="">全部项目</option>
+          </select>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <label style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">品牌机型</label>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <label style="display:inline-flex;align-items:center;gap:5px;background:rgba(79,140,255,.1);border:1px solid rgba(79,140,255,.3);border-radius:6px;padding:6px 12px;cursor:pointer;font-size:12px;color:#4f8cff;user-select:none">
+              <input type="checkbox" id="ql-iphone"  onchange="renderQuickLookup()" checked style="accent-color:#4f8cff;width:14px;height:14px">📱 iPhone
+            </label>
+            <label style="display:inline-flex;align-items:center;gap:5px;background:rgba(0,196,140,.1);border:1px solid rgba(0,196,140,.3);border-radius:6px;padding:6px 12px;cursor:pointer;font-size:12px;color:#00c48c;user-select:none">
+              <input type="checkbox" id="ql-samsung" onchange="renderQuickLookup()" checked style="accent-color:#00c48c;width:14px;height:14px">📲 Samsung
+            </label>
+            <label style="display:inline-flex;align-items:center;gap:5px;background:rgba(245,166,35,.1);border:1px solid rgba(245,166,35,.3);border-radius:6px;padding:6px 12px;cursor:pointer;font-size:12px;color:#f5a623;user-select:none">
+              <input type="checkbox" id="ql-google"  onchange="renderQuickLookup()" checked style="accent-color:#f5a623;width:14px;height:14px">🔍 Google
+            </label>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <label style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">时间范围</label>
+          <div style="display:flex;align-items:center;gap:6px">
+            <select id="ql-from" onchange="renderQuickLookup()" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:7px 10px;font-size:12px;outline:none">
+              <option value="">全部</option>
+            </select>
+            <span style="color:var(--muted);font-size:11px">至</span>
+            <select id="ql-to" onchange="renderQuickLookup()" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:7px 10px;font-size:12px;outline:none">
+              <option value="">全部</option>
+            </select>
+          </div>
+        </div>
+        <button onclick="resetQuickLookup()" style="background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:6px;color:var(--muted);padding:7px 16px;font-size:12px;cursor:pointer;align-self:flex-end">重置</button>
+      </div>
+      <div id="ql-result"></div>
+    </div>
+
+  </div><!-- /main -->
+</div><!-- /dashboard -->
+
+<script>
+// ══════════════════════════════════════════════════════
+// 1. FILE UPLOAD & SQL.JS INIT
+// ══════════════════════════════════════════════════════
+Chart.register(ChartDataLabels);
+let SQL, db;
+let RAW_REPORTS = [], RAW_DEFECTS = [];
+
+// Init sql.js (WebAssembly SQLite)
+initSqlJs({ locateFile: f => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/${f}` })
+  .then(s => { SQL = s; })
+  .catch(e => showError('sql.js 加载失败: ' + e.message));
+
+// Drag & drop
+const dz = document.getElementById('drop-zone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('drag-over'); handleFile(e.dataTransfer.files[0]); });
+document.getElementById('file-input').addEventListener('change', e => handleFile(e.target.files[0]));
+
+function handleFile(file) {
+  if (!file) return;
+  if (!file.name.match(/\.(db|sqlite|sqlite3)$/i)) { showError('请上传 .db / .sqlite 文件'); return; }
+  if (!SQL) { showError('sql.js 尚未就绪，请稍后再试'); return; }
+
+  showLoading('正在读取数据库…');
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      if (db) { db.close(); db = null; }
+      db = new SQL.Database(new Uint8Array(e.target.result));
+      setLoading('正在提取数据…');
+      setTimeout(() => { // yield to repaint
+        try {
+          extractData();
+          setLoading('正在渲染图表…');
+          setTimeout(() => {
+            buildDashboard(file.name);
+          }, 50);
+        } catch(err) { showError('数据解析失败: ' + err.message); }
+      }, 50);
+    } catch(err) { showError('数据库读取失败: ' + err.message); }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function extractData() {
+  // Extract reports with JSON fields parsed
+  const rptRows = db.exec(`
+    SELECT
+      r.report_id,
+      r.order_id,
+      r.overall_result,
+      r.is_final_pass,
+      r.submission_time,
+      r.total_calculated_sample_size,
+      r.qc_pass_qty,
+      COALESCE(r.remark,'') as remark,
+      r.is_reinspection,
+      json_extract(r.order_details_json,'$.location') as location,
+      json_extract(r.order_details_json,'$.prod_group') as prod_group,
+      json_extract(r.order_details_json,'$.order_qty') as order_qty,
+      json_extract(r.order_details_json,'$.POOrderNbr') as po_order_nbr,
+      json_extract(r.aql_info_json,'$.lotSize') as lot_size,
+      json_extract(r.order_details_json,'$.InventoryIDDescritpion') as inventory_desc,
+      GROUP_CONCAT(DISTINCT ri.inspector_name) as inspector_names
+    FROM Inspection_Reports r
+    LEFT JOIN Report_Inspectors ri ON ri.report_id = r.report_id
+    GROUP BY r.report_id
+    ORDER BY r.submission_time DESC
+  `);
+
+  RAW_REPORTS = [];
+  if (rptRows.length) {
+    const cols = rptRows[0].columns;
+    rptRows[0].values.forEach(row => {
+      const obj = {};
+      cols.forEach((c, i) => obj[c] = row[i]);
+      // Normalize supplier and project names
+      obj.location  = normSup(obj.location);
+      obj.prod_group = normPG(obj.prod_group);
+      RAW_REPORTS.push(obj);
+    });
+  }
+
+  // Extract defects
+  const defRows = db.exec(`
+    SELECT report_id, defect_class, defect_type, defect_count, defect_location
+    FROM Defect_Line_Items
+    WHERE defect_count IS NOT NULL AND defect_count > 0
+  `);
+
+  RAW_DEFECTS = [];
+  if (defRows.length) {
+    const cols = defRows[0].columns;
+    defRows[0].values.forEach(row => {
+      const obj = {};
+      cols.forEach((c, i) => obj[c] = row[i]);
+      RAW_DEFECTS.push(obj);
+    });
+  }
+
+  if (!RAW_REPORTS.length) throw new Error('未找到 Inspection_Reports 表或数据为空');
+}
+
+function showLoading(msg) {
+  document.getElementById('upload-screen').style.display = 'none';
+  document.getElementById('loading-screen').style.display = 'flex';
+  document.getElementById('dashboard').style.display = 'none';
+  document.getElementById('loading-text').textContent = msg;
+}
+function setLoading(msg) { document.getElementById('loading-text').textContent = msg; }
+function showError(msg) {
+  document.getElementById('upload-screen').style.display = 'flex';
+  document.getElementById('loading-screen').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'none';
+  const el = document.getElementById('upload-error');
+  el.textContent = '⚠️ ' + msg; el.style.display = 'block';
+}
+function resetToUpload() {
+  document.getElementById('upload-screen').style.display = 'flex';
+  document.getElementById('loading-screen').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'none';
+  document.getElementById('upload-error').style.display = 'none';
+  document.getElementById('file-input').value = '';
+  // destroy all charts
+  Object.keys(CI).forEach(k => { if(CI[k]){CI[k].destroy();delete CI[k];} });
+}
+
+// ══════════════════════════════════════════════════════
+// 2. DASHBOARD INIT
+// ══════════════════════════════════════════════════════
+function buildDashboard(filename) {
+  document.getElementById('upload-screen').style.display = 'none';
+  document.getElementById('loading-screen').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'block';
+
+  // Reset tab to overview
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelector('.tab[onclick="switchTab(\'overview\')"]').classList.add('active');
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-overview').classList.add('active');
+
+  const years = [...new Set(RAW_REPORTS.map(r => getYear(r.submission_time)).filter(Boolean))].sort();
+  const sups  = [...new Set(RAW_REPORTS.map(r => r.location).filter(Boolean))].sort();
+  const pgs   = [...new Set(RAW_REPORTS.map(r => r.prod_group).filter(Boolean))].sort();
+
+  const dateRange = years.length > 1 ? `${years[0]}–${years[years.length-1]}` : years[0] || '';
+  document.getElementById('data-summary').textContent = `${filename} · ${RAW_REPORTS.length} 条记录 · ${dateRange}`;
+
+  // Populate all selects
+  const MONTHS = [1,2,3,4,5,6,7,8,9,10,11,12];
+  const MN = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function popSel(id, opts, lFn) {
+    const s = document.getElementById(id); if(!s) return;
+    while(s.options.length > 1) s.remove(1);
+    opts.forEach(o => { const op = document.createElement('option'); op.value = o; op.textContent = lFn ? lFn(o) : o; s.appendChild(op); });
+  }
+  ['ov-year','sup-year','def-year','rec-year'].forEach(id => popSel(id, years));
+  ['ov-supplier','def-supplier','rec-supplier','br-supplier'].forEach(id => popSel(id, sups));
+  ['ov-prodgroup','def-prodgroup','rec-prodgroup'].forEach(id => popSel(id, pgs));
+  ['ov-month','sup-month','def-month','rec-month'].forEach(id => popSel(id, MONTHS, m => MN[m]));
+
+  const supDetSel = document.getElementById('sup-detail-sel');
+  while(supDetSel.options.length > 0) supDetSel.remove(0);
+  sups.forEach(s => { const o = document.createElement('option'); o.value = s; o.textContent = s; supDetSel.appendChild(o); });
+  supDetSel.removeEventListener('change', renderSupDetail);
+  supDetSel.addEventListener('change', renderSupDetail);
+
+  // Build full YM list from all data for range selects
+  const allYMs = [...new Set(RAW_REPORTS.map(r => getYM(r.submission_time)).filter(Boolean))].sort();
+  const fmt_ym = ym => ym.replace(/(\d{4})-(\d{2})/, '$1年$2月');
+  ['sup-range-from','sup-range-to','sup-range-main-from','sup-range-main-to',
+   'ov-range-from','ov-range-to','def-range-from','def-range-to',
+   'rec-range-from','rec-range-to','br-range-from','br-range-to'].forEach(id => {
+    const s = document.getElementById(id); if(!s) return;
+    while(s.options.length > 0) s.remove(0);
+    const all = document.createElement('option'); all.value=''; all.textContent='全部'; s.appendChild(all);
+    allYMs.forEach(ym => { const o=document.createElement('option'); o.value=ym; o.textContent=fmt_ym(ym); s.appendChild(o); });
+  });
+  document.getElementById('sup-range-from').removeEventListener('change', renderSupDetail);
+  document.getElementById('sup-range-to').removeEventListener('change', renderSupDetail);
+  document.getElementById('sup-range-from').addEventListener('change', renderSupDetail);
+  document.getElementById('sup-range-to').addEventListener('change', renderSupDetail);
+
+  // Reset filters
+  ovF = {}; supF = {}; defF = {}; recF = {};
+  recSortKey = 'submission_time'; recSortDir = -1;
+  defPage = 1; recPage = 1;
+
+  renderOverview();
+}
+
+// ══════════════════════════════════════════════════════
+// 3. HELPERS
+// ══════════════════════════════════════════════════════
+const getYear  = s => s ? new Date(s).getFullYear() : null;
+const getMonth = s => s ? new Date(s).getMonth()+1 : null;
+const getYM    = s => { if(!s)return''; const d=new Date(s); return d.getFullYear()+'-'+(d.getMonth()+1).toString().padStart(2,'0'); };
+const fmtDate  = s => { if(!s)return''; const d=new Date(s); return d.getFullYear()+'-'+(d.getMonth()+1).toString().padStart(2,'0')+'-'+d.getDate().toString().padStart(2,'0'); };
+const fmtN     = n => (n||0).toLocaleString();
+const rCls     = r => r>5?'rate-high':r>2?'rate-mid':'rate-low';
+
+const defByRpt = {};
+// rebuilt each time data loads — called after extractData
+function rebuildDefIndex() {
+  Object.keys(defByRpt).forEach(k => delete defByRpt[k]);
+  RAW_DEFECTS.forEach(d => { if(!defByRpt[d.report_id]) defByRpt[d.report_id]=[]; defByRpt[d.report_id].push(d); });
+}
+
+// ── Data normalizers ──
+function normSup(s) {
+  if (!s) return s;
+  if (s.toUpperCase() === 'TOPTOM') return 'TOP TOM';
+  return s;
+}
+function normPG(pg) {
+  if (!pg) return pg;
+  // CBCASE (MS) SAND → CBCASE (MS)
+  if (pg === 'CBCASE (MS) SAND') return 'CBCASE (MS)';
+  return pg;
+}
+
+function extractModel(desc) {
+  if (!desc) return null;
+  const d = desc;
+
+  // iPhone: match i12/i13/i14/i15/i16/i17/i18 patterns or 'iPhone XX'
+  let m;
+  // "iPhone 18 Pro Max", "iPhone SE4" etc
+  m = d.match(/iPhone\s+([\w\s]+?)(?:\s*[-–]|\s*$)/i);
+  if (m) {
+    const raw = m[1].trim().replace(/\s+/g,' ');
+    // Clean trailing noise
+    return 'iPhone ' + raw.split(/\s*[-–,\/]/)[0].trim();
+  }
+  // "i17 6.9 Pro Max", "i16 6.3 Pro", "i17 STD" etc
+  m = d.match(/\bi(\d{2})\s+([\d.]+\s+[\w\s]+?)(?:\s*[-–]|\s*$)/i);
+  if (m) return 'iPhone ' + m[1] + ' ' + m[2].trim().split(/\s*[-–]/)[0].trim();
+  m = d.match(/\bi(\d{2})\s+(STD|PRO|PLUS|MAX|ULTRA|SE\d*)\b/i);
+  if (m) return 'iPhone ' + m[1] + ' ' + m[2].toUpperCase();
+  m = d.match(/\bi(\d{2})\b/i);
+  if (m) return 'iPhone ' + m[1];
+
+  // Samsung: "Samsung S24 Ultra", "S26 6.7 ULTRA", "Samsung 2026 6.2 STD"
+  m = d.match(/Samsung\s+S?(\d{2})\s*(Ultra|Plus|Standard|STD|FE|[\w\s]*?)(?:\s*[-–(]|\s*$)/i);
+  if (m) return 'Samsung S' + m[1] + (m[2].trim() ? ' ' + m[2].trim().split(/\s*[-–]/)[0].trim() : '');
+  m = d.match(/\bS(\d{2})\s+(ULTRA|PLUS|STD|FE|[\d.]+[\w\s]*?)(?:\s*[-–]|\s*$)/i);
+  if (m) return 'Samsung S' + m[1] + ' ' + m[2].trim().split(/\s*[-–]/)[0].trim();
+  m = d.match(/Samsung\s+20\d{2}\s+[\d.]+\s+(STD|PLUS|ULTRA|PRO)/i);
+  if (m) {
+    const yr = d.match(/20(\d{2})/);
+    const sz = d.match(/[\d.]{3,5}\s+(STD|PLUS|ULTRA|PRO)/i);
+    if (yr && sz) return 'Samsung S' + yr[1] + ' ' + sz[1].toUpperCase();
+  }
+  m = d.match(/\bS(\d{2})\b/i);
+  if (m) return 'Samsung S' + m[1];
+
+  // Google Pixel: "Google Pixel 10 Pro XL", "Google BEAVER/IMPALA/WOMBAT" (codenames)
+  m = d.match(/Google\s+Pixel\s+([\d\w\s]+?)(?:\s*[-–\/]|\s*$)/i);
+  if (m) return 'Pixel ' + m[1].trim().split(/\s*[-–\/]/)[0].trim();
+  // Codename mapping (confirmed by Max)
+  const codenames = {
+    BEAVER:'Pixel 11', IMPALA:'Pixel 11 Pro', WOMBAT:'Pixel 11 Pro XL',
+    SHERPA:'Pixel 11 Fold',
+    CAIMAN:'Pixel 9 Pro Fold', KOMODO:'Pixel 10', FRANKEL:'Pixel 10 Pro',
+    BUCK:'Pixel 10 Pro XL', TEGU:'Pixel 10 Pro Fold'
+  };
+  m = d.match(/Google\s+(\w+)/i);
+  if (m && codenames[m[1].toUpperCase()]) return codenames[m[1].toUpperCase()];
+  if (m) return 'Pixel ' + m[1];
+
+  return null;
+}
+
+function filterReports(f) {
+  return RAW_REPORTS.filter(r => {
+    if(f.year      && getYear(r.submission_time) != f.year) return false;
+    if(f.month     && getMonth(r.submission_time) != f.month) return false;
+    if(f.supplier  && r.location !== f.supplier) return false;
+    if(f.prodgroup && r.prod_group !== f.prodgroup) return false;
+    if(f.result    && r.overall_result !== f.result) return false;
+    if(f.orderid   && !(r.order_id||'').toLowerCase().includes(f.orderid.toLowerCase())) return false;
+    if(f.po        && r.po_order_nbr && !r.po_order_nbr.toLowerCase().includes(f.po.toLowerCase())) return false;
+    const ym = getYM(r.submission_time);
+    if(f.rangeFrom && ym < f.rangeFrom) return false;
+    if(f.rangeTo   && ym > f.rangeTo)   return false;
+    return true;
+  });
+}
+function getDefects(reports) {
+  const ids = new Set(reports.map(r => r.report_id));
+  return RAW_DEFECTS.filter(d => ids.has(d.report_id));
+}
+function pivotRow(reports, defects) {
+  const rSet = new Set(reports.map(r => r.report_id));
+  const myD  = defects.filter(d => rSet.has(d.report_id));
+  const finals = reports.filter(r => ['PASS','FAIL','WAIVE'].includes(r.overall_result));
+  return {
+    reports   : reports.length,
+    dLines    : myD.length,
+    failedQty : myD.reduce((s,d) => s+(d.defect_count||0), 0),
+    sampleSize: reports.reduce((s,r) => s+(r.total_calculated_sample_size||0), 0),
+    passes    : finals.filter(r => r.overall_result==='PASS').length,
+    fails     : finals.filter(r => r.overall_result==='FAIL').length,
+    waives    : finals.filter(r => r.overall_result==='WAIVE').length,
+    orderQty  : reports.reduce((s,r) => s+(r.order_qty||0), 0),
+    get rate() { return this.sampleSize ? this.failedQty/this.sampleSize*100 : 0; }
+  };
+}
+function pivotRowHTML(label, p) {
+  return `<tr>
+    <td>${label}</td><td>${p.reports}</td><td>${p.dLines}</td><td>${fmtN(p.failedQty)}</td>
+    <td>${fmtN(p.sampleSize)}</td><td class="${rCls(p.rate)}">${p.rate.toFixed(2)}%</td>
+    <td style="color:var(--pass)">${p.passes}</td><td style="color:var(--danger)">${p.fails}</td>
+    <td style="color:var(--warn)">${p.waives}</td><td>${fmtN(p.orderQty)}</td>
+  </tr>`;
+}
+
+// ══════════════════════════════════════════════════════
+// 4. TAB SWITCHING
+// ══════════════════════════════════════════════════════
+const CI = {};
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelector(`.tab[onclick="switchTab('${name}')"]`).classList.add('active');
+  document.getElementById('page-'+name).classList.add('active');
+  if(name==='overview') renderOverview();
+  if(name==='supplier') renderSupplier();
+  if(name==='defects')  renderDefects();
+  if(name==='records')  renderRecords();
+  if(name==='brands')   renderBrands();
+  if(name==='lookup')   renderQuickLookup();
+}
+function dc(id) { if(CI[id]){CI[id].destroy();delete CI[id];} }
+
+// ══════════════════════════════════════════════════════
+// 5. OVERVIEW
+// ══════════════════════════════════════════════════════
+let ovF = {};
+function applyOvF() {
+  ovF = { year:document.getElementById('ov-year').value, month:document.getElementById('ov-month').value,
+          supplier:document.getElementById('ov-supplier').value, prodgroup:document.getElementById('ov-prodgroup').value,
+          rangeFrom:document.getElementById('ov-range-from').value, rangeTo:document.getElementById('ov-range-to').value };
+  renderOverview();
+}
+function resetOvF() {
+  ['ov-year','ov-month','ov-supplier','ov-prodgroup','ov-range-from','ov-range-to'].forEach(id => document.getElementById(id).value='');
+  ovF = {}; renderOverview();
+}
+function renderOverview() {
+  const reports = filterReports(ovF);
+  const defects = getDefects(reports);
+  const agg = pivotRow(reports, defects);
+
+  document.getElementById('ov-kpis').innerHTML = `
+    <div class="kpi kinfo"><div class="klabel">${t('kpi_inspections')}</div><div class="kval">${agg.reports}</div><div class="ksub">${t('lbl_reinsp')} ${reports.filter(r=>r.is_reinspection).length} 次</div></div>
+    <div class="kpi kpass"><div class="klabel">PASS</div><div class="kval">${agg.passes}</div><div class="ksub">${agg.reports?((agg.passes/agg.reports)*100).toFixed(1):0}%</div></div>
+    <div class="kpi kfail"><div class="klabel">FAIL</div><div class="kval">${agg.fails}</div><div class="ksub">${agg.reports?((agg.fails/agg.reports)*100).toFixed(1):0}%</div></div>
+    <div class="kpi kwarn"><div class="klabel">WAIVE</div><div class="kval">${agg.waives}</div><div class="ksub" data-i18n="kpi_waive_note">豁免</div></div>
+    <div class="kpi kinfo"><div class="klabel" data-i18n="kpi_sample">抽检数量</div><div class="kval">${(agg.sampleSize/1000).toFixed(1)}K</div><div class="ksub" data-i18n="kpi_sample_u">件</div></div>
+    <div class="kpi kfail"><div class="klabel" data-i18n="kpi_defect_qty">不良数量</div><div class="kval">${fmtN(agg.failedQty)}</div><div class="ksub">${agg.dLines} 条缺陷</div></div>
+    <div class="kpi krate"><div class="klabel" data-i18n="kpi_defect_rate">不良率</div><div class="kval">${agg.rate.toFixed(2)}%</div><div class="ksub" data-i18n="kpi_rate_note">不良数 ÷ 抽检数</div></div>
+    <div class="kpi kinfo"><div class="klabel" data-i18n="kpi_order">订单总量</div><div class="kval">${(agg.orderQty/1000).toFixed(1)}K</div><div class="ksub" data-i18n="kpi_sample_u">件</div></div>
+  `;
+
+  // Monthly pivot
+  const ymMap = {};
+  reports.forEach(r => { const ym=getYM(r.submission_time); if(!ym)return; if(!ymMap[ym])ymMap[ym]=[]; ymMap[ym].push(r); });
+  const yms  = Object.keys(ymMap).sort();
+  const rows = yms.map(ym => ({ ym, ...pivotRow(ymMap[ym], defects) }));
+  document.getElementById('ov-pivot-tbody').innerHTML =
+    rows.map(r => {
+      const d = new Date(r.ym+'-01');
+      const label = d.toLocaleString('zh',{year:'numeric',month:'short'});
+      return pivotRowHTML(label, r);
+    }).join('') + pivotRowHTML(t('lbl_total'), agg);
+
+  // Charts
+  const labels = rows.map(r => r.ym);
+  const rates  = rows.map(r => +r.rate.toFixed(2));
+
+  dc('c-ov-rate');
+  CI['c-ov-rate'] = new Chart(document.getElementById('c-ov-rate'), {
+    type:'line', data:{labels, datasets:[{
+      label:'不良率 %', data:rates, borderColor:'#ff4d6d', backgroundColor:'rgba(255,77,109,.12)',
+      fill:true, tension:0.35, pointRadius:5, pointBackgroundColor:'#ff4d6d'
+    }]},
+    options:{ ...cOpts(),
+      plugins:{ legend:{display:false},
+        datalabels:{ display:true, align:'top', anchor:'top',
+          color:'#ff4d6d', font:{size:11,weight:'600'},
+          formatter: v => v+'%'
+        }
+      }
+    }
+  });
+
+  const yrMap = {};
+  reports.forEach(r => { const y=getYear(r.submission_time); if(!y)return; if(!yrMap[y])yrMap[y]={P:0,F:0,W:0};
+    if(r.overall_result==='PASS')yrMap[y].P++;else if(r.overall_result==='FAIL')yrMap[y].F++;else if(r.overall_result==='WAIVE')yrMap[y].W++;});
+  const yrs = Object.keys(yrMap).sort();
+  dc('c-ov-yearly');
+  CI['c-ov-yearly'] = new Chart(document.getElementById('c-ov-yearly'), {
+    type:'bar', data:{labels:yrs, datasets:[
+      {label:'PASS', data:yrs.map(y=>yrMap[y].P), backgroundColor:'rgba(0,196,140,.75)', borderRadius:4},
+      {label:'FAIL', data:yrs.map(y=>yrMap[y].F), backgroundColor:'rgba(255,77,109,.75)', borderRadius:4},
+      {label:'WAIVE',data:yrs.map(y=>yrMap[y].W), backgroundColor:'rgba(245,166,35,.75)',  borderRadius:4},
+    ]},
+    options:{ ...cOpts(),
+      layout:{ padding:{ top:24 } },
+      plugins:{
+        legend:{ position:'top', align:'center', labels:{ color:'#a0a8c8', font:{size:12}, padding:16, boxWidth:14, boxHeight:10 }},
+        datalabels:{
+          display: ctx => ctx.dataset.data[ctx.dataIndex] > 0,
+          anchor:'end', align:'end', offset:2,
+          color:'#e8eaf6', font:{size:12,weight:'700'},
+          formatter: v => v
+        }
+      }
+    }
+  });
+
+  dc('c-ov-vol');
+  CI['c-ov-vol'] = new Chart(document.getElementById('c-ov-vol'), {
+    type:'bar', data:{labels, datasets:[{
+      label:t('kpi_inspections'), data:rows.map(r=>r.reports),
+      backgroundColor:'rgba(79,140,255,.65)', borderRadius:3
+    }]},
+    options:{ ...cOpts(),
+      plugins:{ legend:{display:false},
+        datalabels:{ display:true, anchor:'end', align:'end',
+          color:'#4f8cff', font:{size:11,weight:'600'},
+          formatter: v => v
+        }
+      }
+    }
+  });
+
+  const cc = {};
+  defects.forEach(d => { cc[d.defect_class]=(cc[d.defect_class]||0)+(d.defect_count||0); });
+  dc('c-ov-class');
+  CI['c-ov-class'] = new Chart(document.getElementById('c-ov-class'), {
+    type:'doughnut', data:{labels:Object.keys(cc),datasets:[{
+      data:Object.values(cc), backgroundColor:['#f5a623','#ff4d6d','#4f8cff'],
+      borderWidth:2, borderColor:'#1a1d27', hoverOffset:6
+    }]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      layout:{ padding:{ top:10, bottom:10, left:40, right:40 } },
+      plugins:{
+        legend:{ position:'bottom', labels:{ color:'#a0a8c8', font:{size:12}, padding:14, boxWidth:12 }},
+        datalabels:{
+          display: ctx => { const tot=ctx.dataset.data.reduce((a,b)=>a+b,0); return tot?(ctx.dataset.data[ctx.dataIndex]/tot*100)>=1:false; },
+          anchor:'center', align:'center',
+          color:'#ffffff', font:{size:12,weight:'700'},
+          textStrokeColor:'rgba(0,0,0,0.6)', textStrokeWidth:3,
+          formatter:(v,ctx) => { const tot=ctx.dataset.data.reduce((a,b)=>a+b,0); const pct=tot?(v/tot*100).toFixed(1):0; return v.toLocaleString()+'\n('+pct+'%)'; }
+        }
+      }
+    }
+  });
+
+  renderDefectBars('ov-top10', defects);
+
+
+
+  // ── Monthly combo chart init ──
+  (function(){
+    const allYMs = [...new Set(RAW_REPORTS.map(r=>getYM(r.submission_time)).filter(Boolean))].sort();
+    const fmtYM = ym => ym.replace(/(\d{4})-0?(\d{1,2})/, '$1年$2月');
+    ['ov-month-from','ov-month-to'].forEach(id=>{
+      const sel=document.getElementById(id); if(!sel) return;
+      while(sel.options.length>0) sel.remove(0);
+      const all=document.createElement('option'); all.value=''; all.textContent='全部'; sel.appendChild(all);
+      allYMs.forEach(ym=>{ const o=document.createElement('option'); o.value=ym; o.textContent=fmtYM(ym); sel.appendChild(o); });
+    });
+    const toSel=document.getElementById('ov-month-to');
+    if(toSel && allYMs.length) toSel.value=allYMs[allYMs.length-1];
+    renderOvMonthlyCombo();
+  })();
+}
+
+function toggleOvSupRow(uid) {
+  const el=document.getElementById(uid);
+  const icon=document.getElementById(uid+'-icon');
+  if(!el) return;
+  const open=el.style.display==='none';
+  el.style.display=open?'block':'none';
+  if(icon) icon.textContent=open?t('collapse'):t('expand');
+}
+
+function toggleOvDefectTable() {
+  const el=document.getElementById('ov-monthly-defect-table');
+  const icon=document.getElementById('ov-defect-toggle-icon');
+  if(!el) return;
+  const open=el.style.display==='none';
+  el.style.display=open?'block':'none';
+  if(icon) icon.textContent=open?'▲ '+t('collapse'):'▼ '+t('expand');
+}
+
+function resetOvMonthRange() {
+  const allYMs=[...new Set(RAW_REPORTS.map(r=>getYM(r.submission_time)).filter(Boolean))].sort();
+  const from=document.getElementById('ov-month-from');
+  const to=document.getElementById('ov-month-to');
+  if(from) from.value='';
+  if(to && allYMs.length) to.value=allYMs[allYMs.length-1];
+  renderOvMonthlyCombo();
+}
+
+function renderOvMonthlyCombo() {
+  const fromVal=(document.getElementById('ov-month-from')||{}).value||'';
+  const toVal=(document.getElementById('ov-month-to')||{}).value||'';
+  const allYMs=[...new Set(RAW_REPORTS.map(r=>getYM(r.submission_time)).filter(Boolean))].sort();
+  const filtered=allYMs.filter(ym=>(!fromVal||ym>=fromVal)&&(!toVal||ym<=toVal));
+  const fmtYM=ym=>ym.replace(/(\d{4})-0?(\d{1,2})/,'$1年$2月');
+  const rCol=r=>r>5?'#ff4d6d':r>2?'#f5a623':'#00c48c';
+
+  const monthRates=filtered.map(ym=>{
+    const rpts=RAW_REPORTS.filter(r=>getYM(r.submission_time)===ym);
+    const ids=new Set(rpts.map(r=>r.report_id));
+    const defs=RAW_DEFECTS.filter(d=>ids.has(d.report_id));
+    const sample=rpts.reduce((s,r)=>s+(r.total_calculated_sample_size||0),0);
+    const defCnt=defs.reduce((s,d)=>s+(d.defect_count||0),0);
+    return sample?+((defCnt/sample*100).toFixed(2)):0;
+  });
+
+  dc('c-ov-monthly-combo');
+  CI['c-ov-monthly-combo']=new Chart(document.getElementById('c-ov-monthly-combo'),{
+    type:'line',
+    data:{labels:filtered.map(fmtYM),datasets:[{
+      label:'不良率 %',data:monthRates,
+      borderColor:'#4f8cff',backgroundColor:'rgba(79,140,255,.08)',
+      fill:true,tension:0.35,pointRadius:7,
+      pointBackgroundColor:monthRates.map(r=>rCol(r)),
+      pointBorderColor:'#1a1d27',pointBorderWidth:2,pointHoverRadius:9
+    }]},
+    options:{responsive:true,maintainAspectRatio:false,
+      layout:{padding:{top:32}},
+      plugins:{
+        legend:{display:false},
+        tooltip:{callbacks:{label:ctx=>'不良率: '+ctx.parsed.y+'%'}},
+        datalabels:{
+          display:true,anchor:'end',align:'top',offset:4,
+          color:ctx=>rCol(monthRates[ctx.dataIndex]),
+          font:{size:12,weight:'700'},
+          formatter:v=>v+'%',
+          textStrokeColor:'rgba(0,0,0,0.7)',textStrokeWidth:3
+        }
+      },
+      scales:{
+        x:{ticks:{color:'#a0a8c8',font:{size:12}},grid:{color:'rgba(255,255,255,.04)'}},
+        y:{ticks:{color:'#7b82a8',font:{size:11},callback:v=>v+'%'},grid:{color:'rgba(255,255,255,.05)'},beginAtZero:true}
+      }
+    }
+  });
+
+  // Rebuild defect cards
+  const tableEl=document.getElementById('ov-monthly-defect-table');
+  if(!tableEl) return;
+  const cards=filtered.map(ym=>{
+    const ymRpts=RAW_REPORTS.filter(r=>getYM(r.submission_time)===ym);
+    const ids=new Set(ymRpts.map(r=>r.report_id));
+    const defs=RAW_DEFECTS.filter(d=>ids.has(d.report_id));
+    const agg={};
+    defs.forEach(d=>{
+      const key=(d.defect_type||'(未分类)')+'||'+(d.defect_class||'Major');
+      agg[key]=(agg[key]||0)+(d.defect_count||0);
+    });
+    const total=defs.reduce((s,d)=>s+(d.defect_count||0),0);
+    const top5=Object.entries(agg).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k,v])=>{
+      const [type,cls]=k.split('||');
+      return{type,cls,cnt:v,pct:total?+(v/total*100).toFixed(1):0};
+    });
+    const label=fmtYM(ym);
+    const col0=top5[0]?top5[0].pct:1;
+    const uid='ov-ym-'+ym.replace('-','');
+
+    // Per-supplier breakdown for this month
+    const supMap={};
+    ymRpts.forEach(r=>{
+      const s=r.location||'未知';
+      if(!supMap[s]) supMap[s]={rpts:[],defs:[]};
+      supMap[s].rpts.push(r);
+    });
+    defs.forEach(d=>{
+      const r=ymRpts.find(x=>x.report_id===d.report_id);
+      const s=(r&&r.location)||'未知';
+      if(supMap[s]) supMap[s].defs.push(d);
+    });
+    const supRows=Object.entries(supMap).map(([sup,v])=>{
+      const sDefs=v.defs;
+      const sTotal=sDefs.reduce((s,d)=>s+(d.defect_count||0),0);
+      const sAgg={};
+      sDefs.forEach(d=>{
+        const t=(d.defect_type||'未分类').replace(/^DC\d+\s*-\s*/,'').replace(/^--.*--$/,'未分类');
+        sAgg[t]=(sAgg[t]||0)+(d.defect_count||0);
+      });
+      const sItems=Object.entries(sAgg).sort((a,b)=>b[1]-a[1]).slice(0,3);
+      const sSample=v.rpts.reduce((s,r)=>s+(r.total_calculated_sample_size||0),0);
+      const sRate=sSample?+(sTotal/sSample*100).toFixed(2):0;
+      const sRateCol=sRate>5?'#ff4d6d':sRate>2?'#f5a623':'#00c48c';
+      const pills=sItems.map(([t,v2])=>{
+        const pct=sTotal?+(v2/sTotal*100).toFixed(0):0;
+        return `<span style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,.06);border-radius:3px;padding:2px 6px;font-size:10px;white-space:nowrap;margin:1px">
+          <span style="color:#d0d4e8">${t}</span>
+          <span style="color:#f5a623;font-weight:600">${v2}</span>
+          <span style="color:var(--muted)">(${pct}%)</span>
+        </span>`;
+      }).join('');
+      return `<div style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:0.5px solid rgba(255,255,255,.05)">
+        <div style="min-width:90px">
+          <div style="font-size:11px;font-weight:600;color:var(--text)">${sup}</div>
+          <div style="font-size:11px;font-weight:700;color:${sRateCol}">${sRate}%</div>
+          <div style="font-size:10px;color:var(--muted)">${t('lbl_defects')} ${sTotal} ${t('lbl_items')}</div>
+        </div>
+        <div style="flex:1;display:flex;flex-wrap:wrap;align-items:center">${pills||'<span style="color:var(--muted);font-size:10px">无缺陷</span>'}</div>
+      </div>`;
+    }).join('');
+
+    return `<div style="background:var(--surface2);border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;min-width:200px;flex:1">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
+        <span style="font-size:12px;font-weight:700;color:var(--text)">${label}</span>
+        <span style="color:var(--muted);font-size:11px">${t('lbl_total_def')} ${total} ${t('lbl_items')}</span>
+      </div>
+      ${top5.length?top5.map(d=>{
+        const col=d.cls==='Critical'?'#ff4d6d':d.cls==='Minor'?'#a0a8c8':'#f5a623';
+        const barW=col0?Math.round(d.pct/col0*100):0;
+        const short=d.type.replace(/^DC\d+\s*-\s*/,'').replace(/^--.*--$/,'未分类').split(/[\/（(]/)[0].trim();
+        return `<div style="margin-bottom:6px">
+          <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px">
+            <span style="color:#d0d4e8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:110px" title="${d.type}">${short}</span>
+            <span style="color:${col};font-weight:600;flex-shrink:0;margin-left:4px">${d.cnt}(${d.pct}%)</span>
+          </div>
+          <div style="background:rgba(255,255,255,.06);border-radius:2px;height:4px">
+            <div style="width:${barW}%;height:100%;background:${col};border-radius:2px"></div>
+          </div>
+        </div>`;
+      }).join(''):`<div style="color:var(--muted);font-size:11px">${t('lbl_no_defect')}</div>`}
+      <div style="margin-top:8px;padding-top:6px;border-top:0.5px solid rgba(255,255,255,.08)">
+        <div onclick="toggleOvSupRow('${uid}')" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;padding:5px 8px;background:rgba(79,140,255,.12);border-radius:5px;border:1px solid rgba(79,140,255,.3);margin-top:2px;transition:background .15s" onmouseover="this.style.background='rgba(79,140,255,.22)'" onmouseout="this.style.background='rgba(79,140,255,.12)'">
+          <span style="font-size:11px;color:#4f8cff;font-weight:600;letter-spacing:.3px">📋 供应商明细</span>
+          <span id="${uid}-icon" style="font-size:11px;color:#4f8cff;font-weight:600">▶ 展开</span>
+        </div>
+        <div id="${uid}" style="display:none;margin-top:6px">${supRows}</div>
+      </div>
+    </div>`;
+  }).join('');
+  tableEl.innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px">${cards}</div>`;
+}
+
+// ══════════════════════════════════════════════════════
+// 6. SUPPLIER
+// ══════════════════════════════════════════════════════
+let supF = {};
+function applySupF() {
+  supF={year:document.getElementById('sup-year').value, month:document.getElementById('sup-month').value,
+        rangeFrom:document.getElementById('sup-range-main-from').value, rangeTo:document.getElementById('sup-range-main-to').value};
+  renderSupplier();
+}
+function resetSupF() {
+  ['sup-year','sup-month','sup-range-main-from','sup-range-main-to'].forEach(id=>document.getElementById(id).value='');
+  supF={}; renderSupplier();
+}
+
+function renderSupplier() {
+  const reports = filterReports(supF);
+  const defects = getDefects(reports);
+  const supMap = {};
+  reports.forEach(r => { const s=r.location||'?'; if(!supMap[s])supMap[s]=[]; supMap[s].push(r); });
+  const sups = Object.keys(supMap).sort((a,b) => pivotRow(supMap[b],defects).rate - pivotRow(supMap[a],defects).rate);
+  const agg = pivotRow(reports, defects);
+
+  document.getElementById('sup-pivot-tbody').innerHTML =
+    sups.map(s => pivotRowHTML(s, pivotRow(supMap[s], defects))).join('') + pivotRowHTML(t('lbl_total'), agg);
+
+  const supRates = sups.map(s => +pivotRow(supMap[s],defects).rate.toFixed(2));
+  dc('c-sup-bar');
+  CI['c-sup-bar'] = new Chart(document.getElementById('c-sup-bar'), {
+    type:'bar',
+    data:{labels:sups,datasets:[{label:'不良率 %',data:supRates,
+      backgroundColor:supRates.map(r=>r>5?'rgba(255,77,109,.8)':r>2?'rgba(245,166,35,.8)':'rgba(79,140,255,.7)'),borderRadius:4}]},
+    options:{...cOpts(),indexAxis:'y',maintainAspectRatio:false,
+      plugins:{ legend:{display:false},
+        datalabels:{ display:true, anchor:'end', align:'end',
+          color:'#e8eaf6', font:{size:11,weight:'600'},
+          formatter: v => v+'%'
+        }
+      },
+      scales:{x:{ticks:{color:'#7b82a8'},grid:{color:'rgba(255,255,255,.05)'}},y:{ticks:{color:'#e8eaf6',font:{size:11}},grid:{color:'rgba(255,255,255,.03)'}}}
+    }
+  });
+
+  // ── Supplier rank line chart (sorted high→low) ──
+  const rankData = sups.map(sup => {
+    const rpts = supMap[sup] || [];
+    const p = pivotRow(rpts, getDefects(rpts));
+    return { sup, rate: +p.rate.toFixed(2) };
+  }).sort((a,b) => b.rate - a.rate);
+
+  dc('c-sup-rank-line');
+  CI['c-sup-rank-line'] = new Chart(document.getElementById('c-sup-rank-line'), {
+    type: 'line',
+    data: {
+      labels: rankData.map(d => d.sup),
+      datasets: [{
+        label: '不良率 %',
+        data: rankData.map(d => d.rate),
+        borderColor: '#4f8cff',
+        backgroundColor: 'rgba(79,140,255,.08)',
+        fill: true,
+        tension: 0.35,
+        pointRadius: 7,
+        pointBackgroundColor: rankData.map(d => d.rate>5?'#ff4d6d':d.rate>2?'#f5a623':'#00c48c'),
+        pointBorderColor: '#1a1d27',
+        pointBorderWidth: 2,
+        pointHoverRadius: 9
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      layout: { padding: { top: 32, bottom: 8 } },
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => `${rankData[ctx.dataIndex].sup}: ${ctx.parsed.y}%` } },
+        datalabels: {
+          display: true,
+          anchor: 'end',
+          align: ctx => ctx.dataIndex % 2 === 0 ? 'top' : 'bottom',
+          offset: 4,
+          color: ctx => { const r=rankData[ctx.dataIndex].rate; return r>5?'#ff4d6d':r>2?'#f5a623':'#00c48c'; },
+          font: { size: 11, weight: '700' },
+          formatter: v => v + '%',
+          textStrokeColor: 'rgba(0,0,0,0.75)',
+          textStrokeWidth: 3
+        }
+      },
+      scales: {
+        x: { ticks: { color: '#a0a8c8', font: { size: 11 } }, grid: { color: 'rgba(255,255,255,.04)' } },
+        y: {
+          ticks: { color: '#7b82a8', font: { size: 11 }, callback: v => v + '%' },
+          grid: { color: 'rgba(255,255,255,.05)' },
+          beginAtZero: true
+        }
+      }
+    }
+  });
+
+  renderSupDetail();
+}
+
+
+function resetSupRange() {
+  document.getElementById('sup-range-from').value = '';
+  document.getElementById('sup-range-to').value = '';
+  renderSupDetail();
+}
+
+function renderSupDetail() {
+  const sup      = document.getElementById('sup-detail-sel').value;
+  const ymFrom   = document.getElementById('sup-range-from').value;
+  const ymTo     = document.getElementById('sup-range-to').value;
+  if(!sup) return;
+  const reports = filterReports({...supF, supplier:sup});
+  const defects = getDefects(reports);
+
+  // Build YM list, then filter by range
+  const ymMap = {};
+  reports.forEach(r=>{const ym=getYM(r.submission_time);if(!ym)return;if(!ymMap[ym])ymMap[ym]=[];ymMap[ym].push(r);});
+  let yms = Object.keys(ymMap).sort();
+  if(ymFrom) yms = yms.filter(ym => ym >= ymFrom);
+  if(ymTo)   yms = yms.filter(ym => ym <= ymTo);
+
+  // Sync "to" can't be before "from": highlight invalid quietly
+  const fromSel = document.getElementById('sup-range-from');
+  const toSel   = document.getElementById('sup-range-to');
+  const invalid = ymFrom && ymTo && ymTo < ymFrom;
+  fromSel.style.borderColor = invalid ? 'var(--danger)' : '';
+  toSel.style.borderColor   = invalid ? 'var(--danger)' : '';
+
+  const rates = yms.map(ym => +pivotRow(ymMap[ym], defects).rate.toFixed(2));
+  const counts = yms.map(ym => pivotRow(ymMap[ym], defects).failedQty);
+
+  dc('c-sup-monthly');
+  CI['c-sup-monthly'] = new Chart(document.getElementById('c-sup-monthly'), {
+    type:'line',
+    data:{labels:yms, datasets:[
+      { label:'不良率 %', data:rates, borderColor:'#4f8cff', backgroundColor:'rgba(79,140,255,.1)',
+        fill:true, tension:0.35, pointRadius:4, pointBackgroundColor:'#4f8cff', yAxisID:'y' },
+      { label:t('kpi_defect_qty'), data:counts, borderColor:'rgba(255,77,109,.6)', backgroundColor:'transparent',
+        borderDash:[4,3], tension:0.35, pointRadius:3, pointBackgroundColor:'#ff4d6d',
+        borderWidth:1.5, yAxisID:'y1' }
+    ]},
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{
+        legend:{ display:true, labels:{ color:'#7b82a8', font:{size:11}, boxWidth:12 } },
+        datalabels:{
+          display: ctx => ctx.datasetIndex === 0,
+          align:'top', anchor:'top',
+          color:'#4f8cff', font:{size:11,weight:'600'},
+          formatter: v => v+'%'
+        }
+      },
+      scales:{
+        x:{ ticks:{color:'#7b82a8',font:{size:10},maxRotation:45}, grid:{color:'rgba(255,255,255,.04)'} },
+        y:{ ticks:{color:'#4f8cff',font:{size:10}}, grid:{color:'rgba(255,255,255,.05)'},
+            title:{display:true, text:'不良率 %', color:'#4f8cff', font:{size:10}} },
+        y1:{ position:'right', ticks:{color:'rgba(255,77,109,.7)',font:{size:10}}, grid:{display:false},
+             title:{display:true, text:t('kpi_defect_qty'), color:'rgba(255,77,109,.7)', font:{size:10}} }
+      }
+    }
+  });
+
+  // Range label in chart title area
+  const rangeNote = (ymFrom||ymTo) ? ` (${ymFrom||'…'} → ${ymTo||'…'})` : '';
+  document.getElementById('sup-def-title').textContent = `${sup} 前 10 不良缺陷`;
+
+  // Defects filtered to same range
+  const rangedReports = reports.filter(r => {
+    const ym = getYM(r.submission_time);
+    if(ymFrom && ym < ymFrom) return false;
+    if(ymTo   && ym > ymTo)   return false;
+    return true;
+  });
+  renderDefectBars('sup-top10', getDefects(rangedReports));
+}
+
+// ══════════════════════════════════════════════════════
+// 7. DEFECTS
+// ══════════════════════════════════════════════════════
+let defF={}, defPage=1;
+function applyDefF() {
+  defF={year:document.getElementById('def-year').value, month:document.getElementById('def-month').value,
+        rangeFrom:document.getElementById('def-range-from').value, rangeTo:document.getElementById('def-range-to').value,
+        supplier:document.getElementById('def-supplier').value, prodgroup:document.getElementById('def-prodgroup').value,
+        _cls:document.getElementById('def-class').value};
+  defPage=1; renderDefects();
+}
+function resetDefF() {
+  ['def-year','def-month','def-range-from','def-range-to','def-supplier','def-prodgroup','def-class'].forEach(id=>document.getElementById(id).value='');
+  defF={}; defPage=1; renderDefects();
+}
+function renderDefects() {
+  const reports = filterReports(defF);
+  const rptMap = {}; reports.forEach(r=>rptMap[r.report_id]=r);
+  let defects = RAW_DEFECTS.filter(d=>rptMap[d.report_id]);
+  if(defF._cls) defects=defects.filter(d=>d.defect_class===defF._cls);
+
+  renderDefectBars('def-top10', defects);
+
+  const cc={};
+  defects.forEach(d=>{cc[d.defect_class]=(cc[d.defect_class]||0)+(d.defect_count||0);});
+  dc('c-def-donut');
+  CI['c-def-donut'] = new Chart(document.getElementById('c-def-donut'), {
+    type:'doughnut',
+    data:{labels:Object.keys(cc),datasets:[{data:Object.values(cc),backgroundColor:['#f5a623','#ff4d6d','#4f8cff'],borderWidth:2,borderColor:'#1a1d27',hoverOffset:6}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      layout:{padding:{top:8,bottom:8,left:30,right:30}},
+      plugins:{
+        legend:{position:'bottom',labels:{color:'#a0a8c8',font:{size:12},padding:12,boxWidth:12}},
+        datalabels:{
+          display: ctx => { const tot=ctx.dataset.data.reduce((a,b)=>a+b,0); return tot?(ctx.dataset.data[ctx.dataIndex]/tot*100)>=1:false; },
+          anchor:'center',align:'center',color:'#ffffff',font:{size:11,weight:'700'},
+          textStrokeColor:'rgba(0,0,0,0.6)',textStrokeWidth:3,
+          formatter:(v,ctx)=>{ const tot=ctx.dataset.data.reduce((a,b)=>a+b,0); const pct=tot?(v/tot*100).toFixed(1):0; return v.toLocaleString()+'\n('+pct+'%)'; }
+        }
+      }
+    }
+  });
+
+  const sorted = [...defects].sort((a,b)=>(b.defect_count||0)-(a.defect_count||0));
+  const PER=50, s=(defPage-1)*PER, e=s+PER;
+  document.getElementById('def-count').textContent=`共 ${sorted.length} 条`;
+  document.getElementById('def-tbody').innerHTML = sorted.slice(s,e).map(d=>{
+    const r=rptMap[d.report_id]||{};
+    const cc2=d.defect_class==='Critical'?'var(--danger)':d.defect_class==='Major'?'var(--warn)':'var(--accent)';
+    return `<tr>
+      <td>${d.defect_type||'-'}</td>
+      <td><span style="color:${cc2};font-weight:600">${d.defect_class||'-'}</span></td>
+      <td>${d.defect_location||'-'}</td>
+      <td style="font-weight:600">${d.defect_count||0}</td>
+      <td style="color:var(--accent)">${r.order_id||'-'}</td>
+      <td>${r.location||'-'}</td><td>${r.prod_group||'-'}</td><td>${fmtDate(r.submission_time)}</td>
+    </tr>`;
+  }).join('')||`<tr><td colspan="8" class="empty">${t('no_data')}</td></tr>`;
+  renderPager('def-pager', defPage, Math.ceil(sorted.length/PER), p=>{defPage=p;renderDefects();});
+}
+
+// ══════════════════════════════════════════════════════
+// 8. RECORDS
+// ══════════════════════════════════════════════════════
+let recF={}, recPage=1, recSortKey='submission_time', recSortDir=-1;
+function applyRecF() {
+  recF={year:document.getElementById('rec-year').value, month:document.getElementById('rec-month').value,
+        rangeFrom:document.getElementById('rec-range-from').value, rangeTo:document.getElementById('rec-range-to').value,
+        supplier:document.getElementById('rec-supplier').value, prodgroup:document.getElementById('rec-prodgroup').value,
+        result:document.getElementById('rec-result').value,
+        orderid:document.getElementById('rec-orderid').value, po:document.getElementById('rec-po').value};
+  recPage=1; renderRecords();
+}
+function resetRecF() {
+  ['rec-year','rec-month','rec-range-from','rec-range-to','rec-supplier','rec-prodgroup','rec-result'].forEach(id=>document.getElementById(id).value='');
+  ['rec-orderid','rec-po'].forEach(id=>document.getElementById(id).value='');
+  recF={}; recPage=1; renderRecords();
+}
+function sortRec(key) {
+  if(recSortKey===key) recSortDir*=-1; else{recSortKey=key;recSortDir=-1;}
+  document.querySelectorAll('#rec-table th').forEach(th=>th.classList.remove('sa','sd'));
+  event.currentTarget.classList.add(recSortDir===1?'sa':'sd');
+  recPage=1; renderRecords();
+}
+function renderRecords() {
+  let reports = filterReports(recF);
+  reports = [...reports].sort((a,b)=>{
+    let va=a[recSortKey]||'', vb=b[recSortKey]||'';
+    if(typeof va==='number') return (va-vb)*recSortDir;
+    return va.toString().localeCompare(vb.toString())*recSortDir;
+  });
+  const PER=50, s=(recPage-1)*PER, e=s+PER;
+  document.getElementById('rec-count').textContent=`共 ${reports.length} 条`;
+  document.getElementById('rec-tbody').innerHTML = reports.slice(s,e).map(r=>`<tr>
+    <td style="color:var(--accent);font-weight:600">${r.order_id||'-'}</td>
+    <td>${r.prod_group||'-'}</td><td>${r.po_order_nbr||'-'}</td>
+    <td>${fmtN(r.order_qty)}</td><td>${r.location||'-'}</td>
+    <td>${fmtN(r.qc_pass_qty)}</td><td>${fmtN(r.lot_size)}</td>
+    <td>${r.total_calculated_sample_size||'-'}</td>
+    <td><span class="badge ${r.overall_result}">${r.overall_result||'-'}</span></td>
+    <td>${fmtDate(r.submission_time)}</td>
+    <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;color:var(--muted)">${r.remark||''}</td>
+  </tr>`).join('')||`<tr><td colspan="11" class="empty">${t('no_data')}</td></tr>`;
+  renderPager('rec-pager', recPage, Math.ceil(reports.length/PER), p=>{recPage=p;renderRecords();});
+}
+
+// ══════════════════════════════════════════════════════
+// 9. SHARED UTILS
+// ══════════════════════════════════════════════════════
+function cOpts() {
+  return { responsive:true, maintainAspectRatio:false,
+    plugins:{
+      legend:{display:false},
+      datalabels:{display:false}
+    },
+    scales:{
+      x:{ticks:{color:'#7b82a8',font:{size:10},maxRotation:45},grid:{color:'rgba(255,255,255,.04)'}},
+      y:{ticks:{color:'#7b82a8',font:{size:10}},grid:{color:'rgba(255,255,255,.05)'}}
+    }
+  };
+}
+function renderDefectBars(id, defects, topN=10) {
+  const counts={};
+  defects.forEach(d=>{if(d.defect_type)counts[d.defect_type]=(counts[d.defect_type]||0)+(d.defect_count||0);});
+  const sorted=Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,topN);
+  const maxV=sorted.length?sorted[0][1]:1;
+  const total=defects.reduce((s,d)=>s+(d.defect_count||0),0);
+  const colors=['#ff4d6d','#f5a623','#4f8cff','#00d2a0','#c77dff','#ff9a3c','#48cae4','#aaf683','#ffd166','#ef476f'];
+  const el=document.getElementById(id);
+  if(!sorted.length){el.innerHTML='<div class="empty">暂无缺陷数据</div>';return;}
+  el.innerHTML='<div class="defect-list">'+sorted.map(([name,cnt],i)=>{
+    const p=total?(cnt/total*100).toFixed(1):0;
+    const w=(cnt/maxV*100).toFixed(1);
+    const sn=name.length>32?name.slice(0,32)+'…':name;
+    return `<div class="defect-item">
+      <div class="dname" title="${name}">${sn}</div>
+      <div class="dbar-wrap"><div class="dbar-fill" style="width:${w}%;background:${colors[i%colors.length]}"></div></div>
+      <div class="dcnt">${cnt}</div><div class="dpct">${p}%</div>
+    </div>`;
+  }).join('')+'</div>';
+}
+function renderPager(id, cur, total, cb) {
+  const el=document.getElementById(id);
+  if(total<=1){el.innerHTML='';return;}
+  const s=Math.max(1,cur-2),e=Math.min(total,cur+2);
+  let b='';
+  if(cur>1) b+=`<button class="pbtn" onclick="(${cb.toString()})(${cur-1})">‹</button>`;
+  if(s>1) b+=`<button class="pbtn" onclick="(${cb.toString()})(1)">1</button>${s>2?'<span style="color:var(--muted);padding:0 4px">…</span>':''}`;
+  for(let p=s;p<=e;p++) b+=`<button class="pbtn ${p===cur?'active':''}" onclick="(${cb.toString()})(${p})">${p}</button>`;
+  if(e<total) b+=`${e<total-1?'<span style="color:var(--muted);padding:0 4px">…</span>':''}<button class="pbtn" onclick="(${cb.toString()})(${total})">${total}</button>`;
+  if(cur<total) b+=`<button class="pbtn" onclick="(${cb.toString()})(${cur+1})">›</button>`;
+  el.innerHTML=`<span class="pinfo">第 ${cur}/${total} 页</span><div class="pbtns">${b}</div>`;
+}
+
+// ══════════════════════════════════════════════════════
+// BRANDS PAGE
+// ══════════════════════════════════════════════════════
+let brF = {};
+function applyBrF() {
+  const checked = [...document.querySelectorAll('#br-sup-checkboxes input:checked')].map(cb=>cb.value);
+  brF = {
+    rangeFrom: document.getElementById('br-range-from').value,
+    rangeTo:   document.getElementById('br-range-to').value,
+    sups: checked
+  };
+  renderBrands();
+}
+function resetBrF() {
+  ['br-range-from','br-range-to'].forEach(id=>document.getElementById(id).value='');
+  document.querySelectorAll('#br-sup-checkboxes input').forEach(cb=>cb.checked=false);
+  brF={}; renderBrands();
+}
+
+function detectBrand(desc) {
+  if (!desc) return null;
+  const d = desc.toLowerCase();
+  if (d.includes('samsung') || /\bs\d{2}\b/.test(d)) return 'Samsung';
+  if (d.includes('google') || d.includes('pixel')) return 'Google';
+  if (d.includes('iphone') || /\bi\d{2}\b/.test(d)) return 'iPhone';
+  return null;
+}
+
+function renderBrands() {
+  const el = document.getElementById('br-content');
+  if (!el) return;
+
+  const rangeFrom = brF.rangeFrom || '';
+  const rangeTo   = brF.rangeTo   || '';
+  const selSups   = (brF.sups || []).slice(0, 5);
+
+  // All phone-case reports filtered by time range
+  const reports = RAW_REPORTS.filter(r => {
+    const ym = getYM(r.submission_time);
+    if (rangeFrom && ym < rangeFrom) return false;
+    if (rangeTo   && ym > rangeTo)   return false;
+    return detectBrand(r.inventory_desc);
+  });
+
+  // All suppliers that have phone-case reports
+  const allSups = [...new Set(reports.map(r=>r.location).filter(Boolean))].sort();
+
+  // Populate checkboxes
+  const cbBox = document.getElementById('br-sup-checkboxes');
+  if (cbBox && cbBox.children.length === 0) {
+    allSups.forEach(s => {
+      const lbl = document.createElement('label');
+      lbl.style.cssText = 'display:inline-flex;align-items:center;gap:5px;background:var(--surface2);border:0.5px solid var(--border);border-radius:5px;padding:5px 10px;cursor:pointer;font-size:12px;color:var(--text);user-select:none;transition:background .15s';
+      lbl.onmouseenter = ()=>lbl.style.background='rgba(79,140,255,.1)';
+      lbl.onmouseleave = ()=>lbl.style.background='var(--surface2)';
+      const cb = document.createElement('input');
+      cb.type='checkbox'; cb.value=s;
+      cb.style.accentColor='#4f8cff';
+      cb.onchange = () => {
+        const checked = [...document.querySelectorAll('#br-sup-checkboxes input:checked')];
+        if (checked.length > 5) { cb.checked=false; return; }
+        lbl.style.background = cb.checked ? 'rgba(79,140,255,.15)' : 'var(--surface2)';
+        lbl.style.borderColor = cb.checked ? '#4f8cff' : 'var(--border)';
+      };
+      lbl.appendChild(cb);
+      lbl.appendChild(document.createTextNode(s));
+      cbBox.appendChild(lbl);
+    });
+  }
+
+  // Restore checked state
+  if (cbBox) {
+    cbBox.querySelectorAll('input').forEach(cb => {
+      const on = selSups.includes(cb.value);
+      cb.checked = on;
+      cb.parentElement.style.background = on ? 'rgba(79,140,255,.15)' : 'var(--surface2)';
+      cb.parentElement.style.borderColor = on ? '#4f8cff' : 'var(--border)';
+    });
+  }
+
+  if (!selSups.length) {
+    el.innerHTML = `<div style="text-align:center;padding:60px 20px;color:var(--muted)">
+      <div style="font-size:32px;margin-bottom:12px">📊</div>
+      <div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:6px">勾选供应商开始对比</div>
+      <div style="font-size:12px">上方勾选 2–5 家供应商，点击「对比」查看各项目不良率横向对比</div>
+    </div>`;
+    return;
+  }
+
+  const BRANDS = ['iPhone','Samsung','Google'];
+  const bIco = {iPhone:'📱',Samsung:'📲',Google:'🔍'};
+  const rCol = r => r>5?'#ff4d6d':r>2?'#f5a623':'#00c48c';
+  const statusLabel = r => r>5?[t('st_attention'),'#ff4d6d','rgba(255,77,109,.15)']:r>2?[t('st_medium'),'#f5a623','rgba(245,166,35,.15)']:[t('st_excellent'),'#00c48c','rgba(0,196,140,.15)'];
+  const SUP_COLORS = ['#4f8cff','#f5a623','#ff4d6d','#00c48c','#c084fc'];
+
+  // Build tree: project → brand → supplier → reports
+  const tree = {};
+  reports.forEach(r => {
+    const b = detectBrand(r.inventory_desc); if (!b) return;
+    const pg = r.prod_group || '未知';
+    const sup = r.location || '未知';
+    if (!tree[pg]) tree[pg] = {};
+    if (!tree[pg][b]) tree[pg][b] = {};
+    if (!tree[pg][b][sup]) tree[pg][b][sup] = [];
+    tree[pg][b][sup].push(r);
+  });
+
+  // Only projects where at least one selected supplier has data
+  const projects = Object.keys(tree).filter(pg =>
+    BRANDS.some(b => tree[pg][b] && selSups.some(s => tree[pg][b][s]))
+  ).sort((a,z) => {
+    const ab = BRANDS.filter(b=>tree[a][b]&&selSups.some(s=>tree[a][b][s])).length;
+    const zb = BRANDS.filter(b=>tree[z][b]&&selSups.some(s=>tree[z][b][s])).length;
+    return zb-ab || a.localeCompare(z);
+  });
+
+  // All YMs across selected data
+  const allYMs = [...new Set(
+    projects.flatMap(pg => BRANDS.flatMap(b => selSups.flatMap(s =>
+      (tree[pg]&&tree[pg][b]&&tree[pg][b][s]||[]).map(r=>getYM(r.submission_time))
+    )))
+  )].filter(Boolean).sort();
+
+  let html = '';
+
+  projects.forEach(pg => {
+    const pgBrands = BRANDS.filter(b => tree[pg][b] && selSups.some(s=>tree[pg][b][s]));
+    if (!pgBrands.length) return;
+
+    const brandTables = pgBrands.map(b => {
+      // Header row: supplier names
+      const colHeaders = selSups.map((s,i) => {
+        const col = SUP_COLORS[i];
+        const hasData = tree[pg][b] && tree[pg][b][s];
+        return `<th style="padding:10px 14px;text-align:center;font-size:12px;font-weight:700;color:${hasData?col:'rgba(255,255,255,.2)'};border-bottom:2px solid ${hasData?col:'rgba(255,255,255,.05)'};background:${hasData?`rgba(${i===0?'79,140,255':i===1?'245,166,35':i===2?'255,77,109':i===3?'0,196,140':'192,132,252'},.08)`:'transparent'};min-width:140px">${s}</th>`;
+      }).join('');
+
+      // Data rows
+      const rateRow = selSups.map((s,i) => {
+        const rpts = (tree[pg][b] && tree[pg][b][s]) || [];
+        if (!rpts.length) return `<td style="padding:10px 14px;text-align:center;color:rgba(255,255,255,.15);font-size:12px">—</td>`;
+        const p = pivotRow(rpts, getDefects(rpts));
+        const rc = rCol(p.rate);
+        const [lbl,col,bg] = statusLabel(p.rate);
+        return `<td style="padding:10px 14px;text-align:center;border-bottom:0.5px solid rgba(255,255,255,.05)">
+          <div style="font-size:18px;font-weight:800;color:${rc}">${p.rate.toFixed(2)}%</div>
+          <span style="display:inline-block;margin-top:3px;padding:2px 8px;border-radius:3px;font-size:10px;font-weight:600;background:${bg};color:${col}">${lbl}</span>
+        </td>`;
+      }).join('');
+
+      const statsRow = selSups.map(s => {
+        const rpts = (tree[pg][b] && tree[pg][b][s]) || [];
+        if (!rpts.length) return `<td style="padding:6px 14px"></td>`;
+        const p = pivotRow(rpts, getDefects(rpts));
+        return `<td style="padding:6px 14px;text-align:center;font-size:10px;color:var(--muted);border-bottom:0.5px solid rgba(255,255,255,.05)">
+          不良${p.failedQty} · 抽检${p.sampleSize.toLocaleString()} · ${p.reports}次<br>
+          <span style="color:var(--pass)">PASS ${((p.passes/(p.reports||1))*100).toFixed(0)}%</span>
+          <span style="color:var(--danger);margin-left:6px">FAIL ${p.fails}</span>
+        </td>`;
+      }).join('');
+
+      // Monthly rate rows
+      const monthRows = allYMs.map(ym => {
+        const ymLabel = ym.replace(/(\d{4})-(\d{2})/,'$1年$2月');
+        const cells = selSups.map(s => {
+          const rpts = ((tree[pg][b]&&tree[pg][b][s])||[]).filter(r=>getYM(r.submission_time)===ym);
+          if (!rpts.length) return `<td style="padding:7px 14px;text-align:center;color:rgba(255,255,255,.15);font-size:11px">—</td>`;
+          const p = pivotRow(rpts, getDefects(rpts));
+          const rc = rCol(p.rate);
+          return `<td style="padding:7px 14px;text-align:center;border-bottom:0.5px solid rgba(255,255,255,.04)">
+            <span style="font-size:12px;font-weight:700;color:${rc}">${p.rate.toFixed(2)}%</span>
+            <span style="font-size:10px;color:var(--muted);margin-left:4px">${rpts.length}次</span>
+          </td>`;
+        }).join('');
+        return `<tr>
+          <td style="padding:7px 14px;font-size:11px;color:var(--muted);white-space:nowrap;border-bottom:0.5px solid rgba(255,255,255,.04)">${ymLabel}</td>
+          ${cells}
+        </tr>`;
+      }).join('');
+
+      // Top defects per supplier
+      const defRows = selSups.map(s => {
+        const rpts = (tree[pg][b] && tree[pg][b][s]) || [];
+        if (!rpts.length) return `<td style="padding:8px 14px"></td>`;
+        const defs = getDefects(rpts);
+        const defAgg={};
+        defs.forEach(d=>{ const t=(d.defect_type||'未分类').replace(/^DC\d+\s*-\s*/,'').replace(/^--.*--$/,'未分类'); defAgg[t]=(defAgg[t]||0)+(d.defect_count||0); });
+        const defTot=defs.reduce((s,d)=>s+(d.defect_count||0),0);
+        const items=Object.entries(defAgg).sort((a,b)=>b[1]-a[1]).slice(0,4);
+        const mx=items[0]?items[0][1]:1;
+        const rows=items.map(([t,v])=>{
+          const pct=defTot?+(v/defTot*100).toFixed(0):0;
+          return `<div style="margin-bottom:4px">
+            <div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:1px">
+              <span style="color:#d0d4e8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100px" title="${t}">${t}</span>
+              <span style="color:#f5a623;font-weight:600;flex-shrink:0;margin-left:4px">${pct}%</span>
+            </div>
+            <div style="background:rgba(255,255,255,.07);border-radius:2px;height:3px">
+              <div style="width:${Math.round(v/mx*100)}%;height:100%;background:#f5a623;border-radius:2px"></div>
+            </div>
+          </div>`;
+        }).join('');
+        return `<td style="padding:8px 14px;vertical-align:top;border-top:0.5px solid rgba(255,255,255,.05)">${rows}</td>`;
+      }).join('');
+
+      // Best supplier highlight
+      const rates = selSups.map(s => {
+        const rpts = (tree[pg][b]&&tree[pg][b][s])||[];
+        return rpts.length ? pivotRow(rpts,getDefects(rpts)).rate : null;
+      }).filter(r=>r!==null);
+      const minRate = rates.length ? Math.min(...rates) : null;
+      const bestIdx = minRate !== null ? selSups.findIndex(s=>{ const rpts=(tree[pg][b]&&tree[pg][b][s])||[]; return rpts.length&&Math.abs(pivotRow(rpts,getDefects(rpts)).rate-minRate)<0.001; }) : -1;
+      const bestBadge = bestIdx>=0 ? `<span style="background:rgba(0,196,140,.15);color:#00c48c;font-size:11px;font-weight:600;padding:2px 9px;border-radius:4px;margin-left:8px">最优: ${selSups[bestIdx]} ${minRate.toFixed(2)}%</span>` : '';
+
+      return `<div style="margin-bottom:16px">
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 14px;background:rgba(255,255,255,.03);border-radius:6px 6px 0 0">
+          <span style="font-size:14px">${bIco[b]}</span>
+          <span style="font-size:13px;font-weight:700;color:var(--text)">${b}</span>
+          ${bestBadge}
+        </div>
+        <div style="overflow-x:auto;border:0.5px solid var(--border);border-top:none;border-radius:0 0 8px 8px">
+          <table style="width:100%;border-collapse:collapse;min-width:${selSups.length*150+120}px">
+            <thead>
+              <tr>
+                <th style="padding:10px 14px;text-align:left;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;background:var(--surface2);width:100px">项目</th>
+                ${colHeaders}
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="padding:10px 14px;font-size:11px;color:var(--muted);vertical-align:top;border-bottom:0.5px solid rgba(255,255,255,.05)" data-i18n="kpi_defect_rate">不良率</td>
+                ${rateRow}
+              </tr>
+              <tr>
+                <td style="padding:6px 14px;font-size:11px;color:var(--muted);border-bottom:0.5px solid rgba(255,255,255,.05)">统计</td>
+                ${statsRow}
+              </tr>
+              ${monthRows}
+              <tr>
+                <td style="padding:8px 14px;font-size:11px;color:var(--muted);vertical-align:top;border-top:0.5px solid rgba(255,255,255,.08)">TOP不良项</td>
+                ${defRows}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+    }).join('');
+
+    html += `<div class="chart-card mb16">
+      <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:12px">${pg}</div>
+      ${brandTables}
+    </div>`;
+  });
+
+  el.innerHTML = html || `<div style="text-align:center;padding:40px;color:var(--muted);font-size:13px">所选供应商无共同手机壳验货记录</div>`;
+}
+
+
+// ══════════════════════════════════════════════════════
+// QUICK LOOKUP
+// ══════════════════════════════════════════════════════
+function toggleQlModel(uid) {
+  const el=document.getElementById(uid);
+  const icon=document.getElementById(uid+'-icon');
+  if(!el) return;
+  const open=el.style.display==='none';
+  el.style.display=open?'block':'none';
+  if(icon) icon.textContent=open?'▼':'▶';
+}
+
+function resetQuickLookup() {
+  document.getElementById('ql-supplier').value='';
+  document.getElementById('ql-project').value='';
+  ['ql-iphone','ql-samsung','ql-google'].forEach(id=>document.getElementById(id).checked=true);
+  ['ql-from','ql-to'].forEach(id=>{ const s=document.getElementById(id); if(s) s.value=''; });
+  renderQuickLookup();
+}
+
+function renderQuickLookup() {
+  const el=document.getElementById('ql-result'); if(!el) return;
+
+  // Populate selectors (idempotent)
+  const allSups=[...new Set(RAW_REPORTS.map(r=>r.location).filter(Boolean))].sort();
+  const allPGs=[...new Set(RAW_REPORTS.map(r=>r.prod_group).filter(Boolean))].sort();
+  const allYMs=[...new Set(RAW_REPORTS.map(r=>getYM(r.submission_time)).filter(Boolean))].sort();
+  const fmtYM=ym=>ym.replace(/(\d{4})-(\d{2})/,'$1年$2月');
+  [['ql-supplier',allSups,'全部供应商'],['ql-project',allPGs,'全部项目']].forEach(([id,vals,ph])=>{
+    const sel=document.getElementById(id); if(!sel||sel.options.length>1) return;
+    vals.forEach(v=>{ const o=document.createElement('option'); o.value=v; o.textContent=v; sel.appendChild(o); });
+  });
+  ['ql-from','ql-to'].forEach(id=>{
+    const sel=document.getElementById(id); if(!sel||sel.options.length>1) return;
+    allYMs.forEach(ym=>{ const o=document.createElement('option'); o.value=ym; o.textContent=fmtYM(ym); sel.appendChild(o); });
+  });
+
+  const selSup = document.getElementById('ql-supplier').value;
+  const selPG  = document.getElementById('ql-project').value;
+  const selFrom= (document.getElementById('ql-from')||{}).value||'';
+  const selTo  = (document.getElementById('ql-to')||{}).value||'';
+  const wantIP = document.getElementById('ql-iphone').checked;
+  const wantSA = document.getElementById('ql-samsung').checked;
+  const wantGO = document.getElementById('ql-google').checked;
+
+  const rCol = r=>r>5?'#ff4d6d':r>2?'#f5a623':'#00c48c';
+  const statusLabel = r=>r>5?[t('st_attention'),'#ff4d6d','rgba(255,77,109,.15)']:r>2?[t('st_medium'),'#f5a623','rgba(245,166,35,.15)']:[t('st_excellent'),'#00c48c','rgba(0,196,140,.15)'];
+
+  // Filter reports
+  let rpts = RAW_REPORTS.filter(r => {
+    if(selSup && r.location!==selSup) return false;
+    if(selPG  && r.prod_group!==selPG) return false;
+    const ym=getYM(r.submission_time);
+    if(selFrom && ym<selFrom) return false;
+    if(selTo   && ym>selTo)   return false;
+    const b=detectBrand(r.inventory_desc);
+    if(!b) return false;
+    if(b==='iPhone'  && !wantIP) return false;
+    if(b==='Samsung' && !wantSA) return false;
+    if(b==='Google'  && !wantGO) return false;
+    return true;
+  });
+
+  if(!rpts.length) {
+    el.innerHTML=`<div style="text-align:center;padding:20px;color:var(--muted);font-size:12px">${t('lbl_no_data')}</div>`;
+    return;
+  }
+
+  // Group: supplier → project → brand → reports
+  const tree={};
+  rpts.forEach(r=>{
+    const sup=r.location||'未知';
+    const pg=r.prod_group||'未知';
+    const b=detectBrand(r.inventory_desc)||'其他';
+    if(!tree[sup]) tree[sup]={};
+    if(!tree[sup][pg]) tree[sup][pg]={};
+    if(!tree[sup][pg][b]) tree[sup][pg][b]=[];
+    tree[sup][pg][b].push(r);
+  });
+
+  const bIco={iPhone:'📱',Samsung:'📲',Google:'🔍'};
+  const bCol={iPhone:'#4f8cff',Samsung:'#00c48c',Google:'#f5a623'};
+  const BRANDS=['iPhone','Samsung','Google'];
+
+  const rows=Object.keys(tree).sort().map(sup=>{
+    const pgRows=Object.keys(tree[sup]).sort().map(pg=>{
+      const brandCells=BRANDS.map(b=>{
+        const brpts=tree[sup][pg][b]||[];
+        if(!brpts.length) return `<td style="padding:8px 12px;text-align:center;color:rgba(255,255,255,.15);font-size:11px">—</td>`;
+        const p=pivotRow(brpts,getDefects(brpts));
+        const rate=p.rate.toFixed(2);
+        const rc=rCol(p.rate);
+        const [lbl,col,bg]=statusLabel(p.rate);
+
+        // Models under this brand for this supplier+project
+        const modelMap={};
+        brpts.forEach(r=>{
+          const model=extractModel(r.inventory_desc)||'其他';
+          if(!modelMap[model]) modelMap[model]={rpts:[],defs:[]};
+          modelMap[model].rpts.push(r);
+        });
+        getDefects(brpts).forEach(d=>{
+          const r=brpts.find(x=>x.report_id===d.report_id);
+          const model=r?extractModel(r.inventory_desc)||'其他':'其他';
+          if(modelMap[model]) modelMap[model].defs.push(d);
+        });
+
+        // Top 2 defects overall
+        const defs=getDefects(brpts);
+        const dagg={};
+        defs.forEach(d=>{
+          const t=(d.defect_type||'未分类').replace(/^DC\d+\s*-\s*/,'').replace(/^--.*--$/,'未分类');
+          dagg[t]=(dagg[t]||0)+(d.defect_count||0);
+        });
+        const dtot=defs.reduce((s,d)=>s+(d.defect_count||0),0);
+        const top2=Object.entries(dagg).sort((a,b)=>b[1]-a[1]).slice(0,2)
+          .map(([t,v])=>`<span style="font-size:10px;color:#d0d4e8;white-space:nowrap">${t} <b style="color:#f5a623">${v}</b></span>`).join('<br>');
+
+        // Model rows for expand
+        const modelUID=('mdl-'+sup+'-'+pg+'-'+b).replace(/[\s()&\/]/g,'_');
+        const modelRows=Object.keys(modelMap).sort().map(model=>{
+          const mp=pivotRow(modelMap[model].rpts, modelMap[model].defs);
+          const mrc=mp.rate>5?'#ff4d6d':mp.rate>2?'#f5a623':'#00c48c';
+          const mDagg={};
+          modelMap[model].defs.forEach(d=>{
+            const t=(d.defect_type||'未分类').replace(/^DC\d+\s*-\s*/,'').replace(/^--.*--$/,'未分类');
+            mDagg[t]=(mDagg[t]||0)+(d.defect_count||0);
+          });
+          const mDtot=modelMap[model].defs.reduce((s,d)=>s+(d.defect_count||0),0);
+          const mTop=Object.entries(mDagg).sort((a,b)=>b[1]-a[1]).slice(0,3)
+            .map(([t,v])=>`<span style="background:rgba(255,255,255,.06);border-radius:3px;padding:2px 6px;font-size:10px;color:#d0d4e8;white-space:nowrap;margin:1px;display:inline-block">${t} <b style="color:#f5a623">${v}</b>(${mDtot?+(v/mDtot*100).toFixed(0):0}%)</span>`).join('');
+          return `<div style="display:flex;align-items:flex-start;gap:8px;padding:5px 0;border-bottom:0.5px solid rgba(255,255,255,.05)">
+            <div style="min-width:130px;flex-shrink:0">
+              <div style="font-size:11px;font-weight:600;color:var(--text)">${model}</div>
+              <div style="font-size:12px;font-weight:700;color:${mrc}">${mp.rate.toFixed(2)}%</div>
+              <div style="font-size:10px;color:var(--muted)">不良${mp.failedQty} · ${mp.reports}次</div>
+            </div>
+            <div style="flex:1;display:flex;flex-wrap:wrap;padding-top:2px">${mTop||'<span style="color:var(--muted);font-size:10px">无缺陷</span>'}</div>
+          </div>`;
+        }).join('');
+
+        return `<td style="padding:8px 12px;border-left:0.5px solid rgba(255,255,255,.05);vertical-align:top">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+            <span style="font-size:13px;font-weight:700;color:${rc}">${rate}%</span>
+            <span style="display:inline-block;padding:1px 7px;border-radius:3px;font-size:10px;font-weight:600;background:${bg};color:${col}">${lbl}</span>
+          </div>
+          <div style="font-size:10px;color:var(--muted);margin-bottom:4px">不良${p.failedQty} · 抽检${p.sampleSize.toLocaleString()} · ${p.reports}次</div>
+          <div style="margin-bottom:6px;line-height:1.6">${top2}</div>
+          <div onclick="toggleQlModel('${modelUID}')" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;padding:4px 8px;background:rgba(79,140,255,.12);border:1px solid rgba(79,140,255,.3);border-radius:4px;margin-top:2px" onmouseover="this.style.background='rgba(79,140,255,.22)'" onmouseout="this.style.background='rgba(79,140,255,.12)'">
+            <span style="font-size:10px;color:#4f8cff;font-weight:600">📱 查看机型明细 (${Object.keys(modelMap).length}款)</span>
+            <span id="${modelUID}-icon" style="font-size:10px;color:#4f8cff">▶</span>
+          </div>
+          <div id="${modelUID}" style="display:none;margin-top:6px;border:0.5px solid rgba(255,255,255,.08);border-radius:6px;padding:6px 8px;background:rgba(0,0,0,.2)">${modelRows}</div>
+        </td>`;
+      }).join('');
+
+      return `<tr style="border-bottom:0.5px solid rgba(255,255,255,.05)" onmouseover="this.style.background='rgba(79,140,255,.05)'" onmouseout="this.style.background=''">
+        <td style="padding:8px 12px;font-size:12px;color:var(--muted);white-space:nowrap">${pg}</td>
+        ${brandCells}
+      </tr>`;
+    }).join('');
+
+    // Supplier overall
+    const allSupRpts=Object.values(tree[sup]).flatMap(pg=>Object.values(pg).flat());
+    const supP=pivotRow(allSupRpts,getDefects(allSupRpts));
+    const supRc=rCol(supP.rate);
+
+    return `<div style="margin-bottom:10px;border:0.5px solid var(--border);border-radius:8px;overflow:hidden">
+      <div style="padding:10px 14px;background:var(--surface2);display:flex;align-items:center;gap:12px">
+        <span style="font-size:13px;font-weight:700;color:var(--text)">${sup}</span>
+        <span style="font-size:13px;font-weight:700;color:${supRc}">${supP.rate.toFixed(2)}%</span>
+        <span style="font-size:11px;color:var(--muted)">${allSupRpts.length}次验货 · 抽检${supP.sampleSize.toLocaleString()}</span>
+      </div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;min-width:500px">
+          <thead>
+            <tr style="border-bottom:1px solid var(--border)">
+              <th style="padding:7px 12px;text-align:left;font-size:10px;color:var(--muted);background:rgba(255,255,255,.02);text-transform:uppercase;letter-spacing:.4px">项目</th>
+              ${BRANDS.map(b=>`<th style="padding:7px 12px;text-align:left;font-size:11px;color:${bCol[b]};background:rgba(255,255,255,.02);border-left:0.5px solid rgba(255,255,255,.05)">${bIco[b]} ${b}</th>`).join('')}
+            </tr>
+          </thead>
+          <tbody>${pgRows}</tbody>
+        </table>
+      </div>
+    </div>`;
+  }).join('');
+
+  el.innerHTML=rows;
+}
+
+
+// ══════════════════════════════════════════════════════
+// EXCEL EXPORT
+// ══════════════════════════════════════════════════════
+function exportExcel() {
+  if (!RAW_REPORTS.length) { alert('请先载入数据库'); return; }
+
+  const wb = XLSX.utils.book_new();
+
+  // ── Sheet 1: Inspection Detail (matches template format) ──
+  const s1rows = [[
+    'Inspector', 'Date', 'Report ID', 'Supplier', 'Project', 'Model / SKU',
+    'Lot Size', 'Sample QTY', 'Failed QTY', 'Defect Description',
+    'Defect Class', 'Defect Location', 'QC Result',
+    'Defect Rate', 'Order QTY', 'Is Reinspection', 'Remark'
+  ]];
+
+  // One row per defect line item; if report has no defects, one summary row
+  RAW_REPORTS.forEach(r => {
+    const defs = RAW_DEFECTS.filter(d => d.report_id === r.report_id);
+    const sample = r.total_calculated_sample_size || 0;
+    const date   = (r.submission_time || '').slice(0, 10);
+    const model  = r.inventory_desc || '';
+    const totalDefQty = defs.reduce((s, d) => s + (d.defect_count || 0), 0);
+    const rate   = sample ? +(totalDefQty / sample * 100).toFixed(2) : 0;
+
+    if (!defs.length) {
+      s1rows.push([
+        r.inspector_names || '', date, r.report_id, r.location || '', r.prod_group || '', model,
+        r.order_qty || '', sample, 0, '', '', '', r.overall_result || '',
+        rate + '%', r.order_qty || '', r.is_reinspection ? 'Yes' : 'No', r.remark || ''
+      ]);
+    } else {
+      defs.forEach(d => {
+        s1rows.push([
+          r.inspector_names || '', date, r.report_id, r.location || '', r.prod_group || '', model,
+          r.order_qty || '', sample, d.defect_count || 0,
+          d.defect_type || '', d.defect_class || '', d.defect_location || '',
+          r.overall_result || '', rate + '%',
+          r.order_qty || '', r.is_reinspection ? 'Yes' : 'No', r.remark || ''
+        ]);
+      });
+    }
+  });
+  // Sort by date desc
+  const s1header = s1rows.shift();
+  s1rows.sort((a, b) => (b[0] || '').localeCompare(a[0] || ''));
+  s1rows.unshift(s1header);
+
+  const ws1 = XLSX.utils.aoa_to_sheet(s1rows);
+  ws1['!cols'] = [16,12,10,14,12,36,10,10,10,30,10,16,10,10,12,12,24].map(w=>({wch:w}));
+  XLSX.utils.book_append_sheet(wb, ws1, 'Inspection Detail');
+
+  // ── Sheet 2: Monthly Summary ──
+  const allYMs = [...new Set(RAW_REPORTS.map(r => getYM(r.submission_time)).filter(Boolean))].sort();
+  const s2rows = [[t('th_month'),t('th_inspections'),t('th_defect_lines'),t('th_defect_qty'),t('th_sample'),t('th_rate'),'PASS','FAIL','WAIVE',t('th_order')]];
+  let tot = {cnt:0,dl:0,dq:0,smp:0,ps:0,fl:0,wv:0,oq:0};
+  allYMs.forEach(ym => {
+    const rpts = RAW_REPORTS.filter(r => getYM(r.submission_time) === ym);
+    const ids  = new Set(rpts.map(r => r.report_id));
+    const defs = RAW_DEFECTS.filter(d => ids.has(d.report_id));
+    const smp  = rpts.reduce((s,r) => s+(r.total_calculated_sample_size||0), 0);
+    const dq   = defs.reduce((s,d) => s+(d.defect_count||0), 0);
+    const ps   = rpts.filter(r => r.overall_result==='PASS').length;
+    const fl   = rpts.filter(r => r.overall_result==='FAIL').length;
+    const wv   = rpts.filter(r => r.overall_result==='WAIVE').length;
+    const oq   = rpts.reduce((s,r) => s+(r.order_qty||0), 0);
+    const rate = smp ? +(dq/smp*100).toFixed(2) : 0;
+    const lbl  = ym.replace(/(\d{4})-(\d{2})/, '$1年$2月');
+    s2rows.push([lbl, rpts.length, defs.length, dq, smp, rate+'%', ps, fl, wv, oq]);
+    tot.cnt+=rpts.length; tot.dl+=defs.length; tot.dq+=dq; tot.smp+=smp;
+    tot.ps+=ps; tot.fl+=fl; tot.wv+=wv; tot.oq+=oq;
+  });
+  const totRate = tot.smp ? +(tot.dq/tot.smp*100).toFixed(2) : 0;
+  s2rows.push([t('lbl_total'), tot.cnt, tot.dl, tot.dq, tot.smp, totRate+'%', tot.ps, tot.fl, tot.wv, tot.oq]);
+  const ws2 = XLSX.utils.aoa_to_sheet(s2rows);
+  ws2['!cols'] = [14,10,10,10,12,10,8,8,8,12].map(w=>({wch:w}));
+  XLSX.utils.book_append_sheet(wb, ws2, '月度汇总');
+
+  // ── Sheet 3: Supplier Summary ──
+  const sups = [...new Set(RAW_REPORTS.map(r => r.location).filter(Boolean))].sort();
+  const s3rows = [[t('th_sup'),t('th_inspections'),t('th_defect_qty'),t('th_sample'),t('th_rate'),'PASS','FAIL','WAIVE',t('th_pass_rate'),t('th_status')]];
+  const supData = sups.map(sup => {
+    const rpts = RAW_REPORTS.filter(r => r.location === sup);
+    const ids  = new Set(rpts.map(r => r.report_id));
+    const defs = RAW_DEFECTS.filter(d => ids.has(d.report_id));
+    const smp  = rpts.reduce((s,r) => s+(r.total_calculated_sample_size||0), 0);
+    const dq   = defs.reduce((s,d) => s+(d.defect_count||0), 0);
+    const ps   = rpts.filter(r => r.overall_result==='PASS').length;
+    const fl   = rpts.filter(r => r.overall_result==='FAIL').length;
+    const wv   = rpts.filter(r => r.overall_result==='WAIVE').length;
+    const rate = smp ? +(dq/smp*100).toFixed(2) : 0;
+    const pr   = rpts.length ? +((ps/rpts.length)*100).toFixed(1) : 0;
+    const status = rate>5?'需关注':rate>2?'中等':'优秀';
+    return {sup, cnt:rpts.length, dq, smp, rate, ps, fl, wv, pr, status};
+  }).sort((a,b) => b.rate - a.rate);
+  supData.forEach(d => s3rows.push([d.sup, d.cnt, d.dq, d.smp, d.rate+'%', d.ps, d.fl, d.wv, d.pr+'%', d.status]));
+  const ws3 = XLSX.utils.aoa_to_sheet(s3rows);
+  ws3['!cols'] = [14,10,10,12,10,8,8,8,10,10].map(w=>({wch:w}));
+  XLSX.utils.book_append_sheet(wb, ws3, '供应商汇总');
+
+  // ── Sheet 4: Defect Summary ──
+  const s4rows = [['Defect Type','Defect Class',t('th_defect_qty'),'% of Total',t('th_sup')+' Count','Report Count']];
+  const defAgg = {};
+  RAW_DEFECTS.forEach(d => {
+    const k = (d.defect_type||'未分类') + '||' + (d.defect_class||'Major');
+    if (!defAgg[k]) defAgg[k] = {cnt:0, sups:new Set(), rpts:new Set()};
+    defAgg[k].cnt += (d.defect_count || 0);
+    const r = RAW_REPORTS.find(x => x.report_id === d.report_id);
+    if (r) { defAgg[k].sups.add(r.location); defAgg[k].rpts.add(d.report_id); }
+  });
+  const totalDef = Object.values(defAgg).reduce((s,v) => s+v.cnt, 0);
+  Object.entries(defAgg).sort((a,b) => b[1].cnt - a[1].cnt).forEach(([k,v]) => {
+    const [type, cls] = k.split('||');
+    const pct = totalDef ? +(v.cnt/totalDef*100).toFixed(1) : 0;
+    s4rows.push([type, cls, v.cnt, pct+'%', v.sups.size, v.rpts.size]);
+  });
+  const ws4 = XLSX.utils.aoa_to_sheet(s4rows);
+  ws4['!cols'] = [30,12,12,12,14,12].map(w=>({wch:w}));
+  XLSX.utils.book_append_sheet(wb, ws4, '缺陷汇总');
+
+  // Filename
+  const dates = RAW_REPORTS.map(r=>(r.submission_time||'').slice(0,7)).filter(Boolean).sort();
+  const from = dates[0]||''; const to = dates[dates.length-1]||'';
+  XLSX.writeFile(wb, 'QC_Report_' + (from===to?from:from+'_to_'+to) + '.xlsx');
+}
+
+
+// ══════════════════════════════════════════════════════
+// LANGUAGE / i18n
+// ══════════════════════════════════════════════════════
+let LANG = 'zh';
+
+const T = {
+  // Nav tabs
+  tab_overview:   {zh:'总览',      en:'Overview'},
+  tab_supplier:   {zh:'供应商分析', en:'Supplier Analysis'},
+  tab_defects:    {zh:'不良缺陷',  en:'Defects'},
+  tab_records:    {zh:'验货记录',  en:'Records'},
+  tab_brands:     {zh:'品牌良率',  en:'Brand Quality'},
+  tab_lookup:     {zh:'快速查找',  en:'Quick Lookup'},
+  // KPI cards
+  kpi_inspections:{zh:'验货次数',  en:'Inspections'},
+  kpi_reinspect:  {zh:'复检',      en:'reinspection(s)'},
+  kpi_sample:     {zh:'抽检数量',  en:'Sample Qty'},
+  kpi_defect_qty: {zh:'不良数量',  en:'Defect Qty'},
+  kpi_defect_rate:{zh:'不良率',    en:'Defect Rate'},
+  kpi_order:      {zh:'订单总量',  en:'Order Qty'},
+  kpi_defect_lines:{zh:'条缺陷',   en:'defect lines'},
+  kpi_defect_note:{zh:'不良数 ÷ 抽检数',    en:'Defects ÷ Sample'},
+  // Filter labels
+  f_year:         {zh:'年份',      en:'Year'},
+  f_month:        {zh:'月份',      en:'Month'},
+  f_supplier:     {zh:'供应商',    en:'Supplier'},
+  f_prodgroup:    {zh:'产品组',    en:'Product'},
+  f_start_month:  {zh:'开始月份',  en:'From'},
+  f_end_month:    {zh:'结束月份',  en:'To'},
+  f_filter:       {zh:'筛选',      en:'Filter'},
+  f_reset:        {zh:'重置',      en:'Reset'},
+  f_all:          {zh:'全部',      en:'All'},
+  // Table headers
+  th_month:       {zh:'月份',      en:'Month'},
+  th_inspections: {zh:'验货次数',  en:'Inspections'},
+  th_defect_lines:{zh:'缺陷条数',  en:'Defect Lines'},
+  th_defect_qty:  {zh:'不良数量',  en:'Defect Qty'},
+  th_sample:      {zh:'抽检数量',  en:'Sample Qty'},
+  th_rate:        {zh:'不良率',    en:'Defect Rate'},
+  th_pass:        {zh:'PASS',      en:'PASS'},
+  th_fail:        {zh:'FAIL',      en:'FAIL'},
+  th_waive:       {zh:'WAIVE',     en:'WAIVE'},
+  th_order:       {zh:'订单总量',  en:'Order Qty'},
+  th_total:       {zh:'合计',      en:'Total'},
+  // Section titles
+  s_monthly_table:{zh:'月度数据透视', en:'Monthly Data Pivot'},
+  s_monthly_trend:{zh:'月度不良率趋势（筛选范围）', en:'Monthly Defect Rate Trend'},
+  s_top10:        {zh:'整体前 10 不良缺陷',                                  en:'Top 10 Defects'},
+  s_top_monthly:  {zh:'各月TOP不良项',          en:'Monthly Top Defects'},
+  s_sup_status:   {zh:'供应商状态总览', en:'Supplier Status Overview'},
+  s_sup_rate:     {zh:'各供应商不良率对比', en:'Supplier Defect Rate Comparison'},
+  s_sup_rank:     {zh:'不良率对比', en:'Defect Rate Ranking'},
+  s_sup_trend:    {zh:'各供应商月度不良率趋势', en:'Monthly Defect Rate Trend by Supplier'},
+  s_sup_defect:   {zh:'各供应商不良项明细（按月）', en:'Supplier Defect Breakdown (by Month)'},
+  s_sup_detail:   {zh:'供应商详情', en:'Supplier Detail'},
+  s_lookup_title: {zh:'快速查找',  en:'Quick Lookup'},
+  s_lookup_sub:   {zh:'按供应商 / 项目 / 品牌快速定位验货记录', en:'Find records by Supplier / Project / Brand'},
+  s_monthly_trend_short:{zh:'月度不良率趋势', en:'Monthly Defect Rate Trend'},
+  s_monthly_vol:  {zh:'月度验货次数',  en:'Monthly Inspections'},
+  th_defect_rate2:{zh:'不良率',        en:'Defect Rate'},
+  lbl_defects:    {zh:'不良',          en:'Defects'},
+  lbl_sample:     {zh:'抽检',          en:'Sample'},
+  lbl_times:      {zh:'次',            en:'insp.'},
+  lbl_total_def:  {zh:'共',            en:'Total:'},
+  lbl_items:      {zh:'件',                       en:'pcs'},
+  lbl_no_defect:  {zh:'无缺陷记录',    en:'No defects'},
+  lbl_no_data:    {zh:'无匹配记录，请调整筛选条件', en:'No matching records. Try adjusting filters.'},
+  lbl_total:      {zh:'合计',          en:'Total'},
+  lbl_waive_note: {zh:'豁免',                    en:'waived'},
+  lbl_defect_note:{zh:'不良数 ÷ 抽检数',    en:'Defects ÷ Sample'},
+  lbl_reinsp:     {zh:'复检',          en:'re-insp.'},
+  lbl_defect_lines_note:{zh:'条缺陷',  en:'defect lines'},
+  lbl_upload_title:{zh:'QC Dashboard 数据分析平台', en:'QC Dashboard Analytics'},
+  lbl_upload_sub: {zh:'上传你的验货数据库文件，自动生成数据分析看板', en:'Upload your inspection database to generate analytics'},
+  lbl_drop:       {zh:'拖拽 .db 文件到这里', en:'Drop .db file here'},
+  lbl_drop_sub:   {zh:'或点击选择文件', en:'or click to select'},
+  lbl_select_db:  {zh:'选择数据库文件', en:'Select Database File'},
+  lbl_privacy:    {zh:'文件在浏览器本地处理，不会上传到任何服务器', en:'Processed locally in your browser — never uploaded to any server'},
+  lbl_monthly_pivot:{zh:'月度数据透视', en:'Monthly Data Pivot'},
+  sup_overall:    {zh:'整体不良率',    en:'Overall Defect Rate'},
+  lbl_no_record:  {zh:'无验货记录',    en:'No records'},
+  lbl_monthly_trend:{zh:'按月不良率',   en:'Monthly Trend'},
+  s_yearly:       {zh:'年度验货结果',   en:'Annual Inspection Results'},
+  s_defect_dist:  {zh:'不良等级分布',   en:'Defect Grade Distribution'},
+  s_sup_data:     {zh:'供应商数据透视', en:'Supplier Data Pivot'},
+  s_defect_detail:{zh:'缺陷明细',       en:'Defect Detail'},
+  s_defect_range: {zh:'月度不良率趋势（筛选范围）', en:'Monthly Defect Rate (Filtered Range)'},
+  th_defect_type: {zh:'缺陷类型',       en:'Defect Type'},
+  th_defect_grade:{zh:'不良等级',       en:'Grade'},
+  th_location2:   {zh:'部位',           en:'Location'},
+  s_sup_curve2:   {zh:'各供应商月度不良率趋势', en:'Monthly Defect Rate by Supplier'},
+  s_top10_label:  {zh:'前 10 不良缺陷', en:'Top 10 Defects'},
+  kpi_sample_u:   {zh:'件',             en:'pcs'},
+  kpi_order_u:    {zh:'件',             en:'pcs'},
+  // Status labels
+  st_excellent:   {zh:'优秀',      en:'Good'},
+  st_medium:      {zh:'中等',      en:'Monitor'},
+  st_attention:   {zh:'需关注',    en:'At Risk'},
+  // Supplier table headers
+  th_sup:         {zh:'供应商',    en:'Supplier'},
+  th_def_rate:    {zh:'不良率',    en:'Defect Rate'},
+  th_def_qty:     {zh:'不良数',    en:'Defects'},
+  th_sample_qty:  {zh:'抽检数',    en:'Sample'},
+  th_insp_cnt:    {zh:'验货次数',  en:'Inspections'},
+  th_pass_rate:   {zh:'PASS率',    en:'Pass Rate'},
+  th_status:      {zh:'状态',      en:'Status'},
+  th_main_defect: {zh:'主要不良项', en:'Main Defects'},
+  // Misc
+  no_data:        {zh:'暂无数据',  en:'No data'},
+  expand:         {zh:'展开',      en:'Expand'},
+  collapse:       {zh:'收起',      en:'Collapse'},
+  sup_detail_btn: {zh:'📋 供应商明细', en:'📋 Supplier Detail'},
+  export_btn:     {zh:'⬇ 导出 Excel', en:'⬇ Export Excel'},
+  change_db:      {zh:'↩ 换数据库', en:'↩ Change DB'},
+  range_label:    {zh:'范围',      en:'Range'},
+  to_label:       {zh:'至',        en:'to'},
+  all_label:      {zh:'全部',      en:'All'},
+};
+
+function t(key) { return (T[key] && T[key][LANG]) || key; }
+
+function toggleLang() {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  const btn = document.getElementById('lang-btn');
+  if (btn) btn.textContent = LANG === 'zh' ? 'EN' : '中文';
+  applyLang();
+  // Re-render current tab to apply language
+  const activePage = document.querySelector('.page:not([style*="none"])');
+  if (activePage) {
+    const id = activePage.id.replace('page-', '');
+    if (id) switchTab(id);
+  }
+}
+
+function applyLang() {
+  // Nav tabs
+  const tabMap = {
+    'overview': t('tab_overview'), 'supplier': t('tab_supplier'),
+    'defects':  t('tab_defects'),  'records':  t('tab_records'),
+    'brands':   t('tab_brands'),   'lookup':   t('tab_lookup')
+  };
+  document.querySelectorAll('.tab').forEach(btn => {
+    const onclick = btn.getAttribute('onclick') || '';
+    const m = onclick.match(/switchTab\('(\w+)'\)/);
+    if (m && tabMap[m[1]]) btn.textContent = tabMap[m[1]];
+  });
+  // Export & DB buttons
+  const expBtn = document.querySelector('button[onclick="exportExcel()"]');
+  if (expBtn) expBtn.innerHTML = t('export_btn');
+  const dbBtn = document.querySelector('button[onclick="resetToUpload()"]');
+  if (dbBtn) dbBtn.textContent = t('change_db');
+  // Filter labels across all pages
+  document.querySelectorAll('label[data-i18n]').forEach(el => {
+    el.textContent = t(el.dataset.i18n);
+  });
+  // Filter buttons
+  document.querySelectorAll('button[data-i18n]').forEach(el => {
+    el.textContent = t(el.dataset.i18n);
+  });
+  document.querySelectorAll('h3[data-i18n], th[data-i18n], td[data-i18n], span[data-i18n], div[data-i18n], label[data-i18n], button[data-i18n]').forEach(el => {
+    el.textContent = t(el.dataset.i18n);
+  });
+  // Re-render dynamic content that uses t() 
+  const activePage = document.querySelector('.page[style*="block"], .page:not([style*="none"])');
+  if (activePage) {
+    const id = activePage.id ? activePage.id.replace('page-', '') : '';
+    if (id === 'overview' || id === '') renderOverview && renderOverview();
+    else if (id === 'supplier') renderSupplier && renderSupplier();
+    else if (id === 'defects')  renderDefects && renderDefects();
+    else if (id === 'records')  renderRecords && renderRecords();
+    else if (id === 'brands')   renderBrands && renderBrands();
+    else if (id === 'lookup')   renderQuickLookup && renderQuickLookup();
+  }
+}
+
+</script>
+</body>
+</html>
