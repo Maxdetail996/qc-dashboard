@@ -176,6 +176,10 @@ th.sa .si::after{content:"▲"} th.sd .si::after{content:"▼"} th:not(.sa):not(
     <div class="upload-sub" style="margin-top:8px">上传你的验货数据库文件，自动生成数据分析看板</div>
   </div>
 
+  <button onclick="autoLoadDB()" style="display:block;width:100%;max-width:420px;margin:0 auto 16px;background:rgba(79,140,255,.15);border:2px solid #4f8cff;border-radius:10px;color:#4f8cff;font-size:15px;font-weight:600;padding:16px 32px;cursor:pointer;letter-spacing:.3px">
+    ⚡ 加载在线数据库 / Load Online Data
+  </button>
+  <div style="text-align:center;font-size:12px;color:var(--muted);margin-bottom:12px">— 或者手动上传 / or upload manually —</div>
   <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
     <div class="dz-icon">🗄️</div>
     <div class="dz-text">拖拽 .db 文件到这里</div>
@@ -473,7 +477,7 @@ dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('drag
 document.getElementById('file-input').addEventListener('change', e => handleFile(e.target.files[0]));
 
 // Auto-load database from GitHub
-const DB_URL = 'https://maxdetail996.github.io/qc-dashboard/qc_database_2026-10-06.db';
+const DB_URL = 'https://cdn.jsdelivr.net/gh/Maxdetail996/qc-dashboard@main/qc_database_2026-10-06.db';
 function autoLoadDB() {
   showLoading(LANG==='zh'?'正在加载数据库…':'Loading database...');
   fetch(DB_URL)
@@ -493,12 +497,7 @@ function autoLoadDB() {
     });
 }
 
-// Wait for sql.js then auto-load
-function waitForSQLAndLoad() {
-  if (SQL) { autoLoadDB(); }
-  else { setTimeout(waitForSQLAndLoad, 200); }
-}
-waitForSQLAndLoad();
+// Auto-load is triggered by button click only
 
 function handleFile(file) {
   if (!file) return;
